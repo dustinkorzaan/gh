@@ -110,6 +110,14 @@ final approval and merge are always a human action.
 Add the `stage:paused` label to a PR or issue at any time to halt the
 orchestrator; it must take no action while that label is present.
 
+### Securing the approval gate
+
+Applying the `approved-plan` label directly triggers privileged automation
+(assigning the Copilot coding agent, starting iteration 1). Restrict who can
+apply it — e.g. via a ruleset/branch-protection rule limiting label
+management to maintainers, or a required-reviewers rule on the story issue —
+so the gate can't be bypassed by an arbitrary contributor.
+
 ## Label reference
 
 See `.github/labels.yml` (kept in sync by `.github/workflows/label-sync.yml`)

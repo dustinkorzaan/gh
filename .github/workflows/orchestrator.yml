@@ -59,32 +59,47 @@ jobs:
 
           labels="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
 
+          remove_label_if_present() {
+            local label="$1"
+            if grep -qx "$label" <<<"$labels"; then
+              gh pr edit "$PR" --repo "$REPO" --remove-label "$label"
+            fi
+          }
+
+          found_iteration=""
           current_iteration=1
           for n in 1 2 3; do
             if grep -qx "iteration-$n" <<<"$labels"; then
+              found_iteration=1
               current_iteration=$n
             fi
           done
+          if [ -z "$found_iteration" ]; then
+            echo "::warning::No iteration-N label found on PR #$PR; defaulting to iteration 1. Check that the orchestrator applied labels correctly."
+          fi
 
           if [ "$REVIEW_STATE" = "approved" ]; then
-            gh pr edit "$PR" --repo "$REPO" \
-              --remove-label "stage:implementing" --remove-label "stage:testing" \
-              --remove-label "stage:reviewing" --add-label "stage:ready-for-human"
+            remove_label_if_present "stage:implementing"
+            remove_label_if_present "stage:testing"
+            remove_label_if_present "stage:reviewing"
+            gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
             gh pr comment "$PR" --repo "$REPO" --body \
               "Peer review passed on iteration $current_iteration/3. Loop stopped: **stage:ready-for-human** — ready for final human review."
 
           elif [ "$REVIEW_STATE" = "changes_requested" ]; then
             if [ "$current_iteration" -ge 3 ]; then
-              gh pr edit "$PR" --repo "$REPO" \
-                --remove-label "stage:implementing" --remove-label "stage:testing" \
-                --remove-label "stage:reviewing" --add-label "stage:ready-for-human"
+              remove_label_if_present "stage:implementing"
+              remove_label_if_present "stage:testing"
+              remove_label_if_present "stage:reviewing"
+              gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
               gh pr comment "$PR" --repo "$REPO" --body \
                 "Reached the 3-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** (flagged — needs human triage of outstanding review comments)."
             else
               next=$((current_iteration + 1))
+              remove_label_if_present "iteration-$current_iteration"
+              remove_label_if_present "stage:reviewing"
               gh pr edit "$PR" --repo "$REPO" \
-                --remove-label "iteration-$current_iteration" --add-label "iteration-$next" \
-                --remove-label "stage:reviewing" --add-label "stage:implementing"
+                --add-label "iteration-$next" --add-label "stage:implementing"
               gh pr comment "$PR" --repo "$REPO" --body \
                 "Review requested changes on iteration $current_iteration/3. Starting **iteration $next/3**: implement -> test -> review, addressing the open review comments."
             fi
