@@ -24,24 +24,34 @@ env:
   # Hard cap on implement/test/review cycles. Centralized so labels.yml's
   # iteration-1..N labels and the loop logic below stay in sync if changed.
   MAX_ITERATIONS: 3
+  # Prefix for the auto-created working branch: <prefix>/<issue-number>.
+  WORK_BRANCH_PREFIX: story
 
 jobs:
   release-approved-plan:
-    # Plan interview & approval gate -> kicks off iteration 1.
+    # Plan interview & approval gate -> creates the working branch/draft PR
+    # and kicks off iteration 1.
     if: >-
       github.event_name == 'issues' && github.event.label.name == 'approved-plan' &&
       !contains(github.event.issue.labels.*.name, 'stage:paused')
     runs-on: ubuntu-latest
+    # Creating the git ref/commit for the working branch needs contents:
+    # write, on top of the workflow-level issues/pull-requests permissions.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Move issue into implementation, start iteration 1
+      - name: Move issue into implementation, open branch/PR, start iteration 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
           ASSIGNEE: ${{ env.IMPLEMENTER_ASSIGNEE }}
           MAX_ITERATIONS: ${{ env.MAX_ITERATIONS }}
+          BRANCH: ${{ env.WORK_BRANCH_PREFIX }}/${{ github.event.issue.number }}
         run: |
           set -euo pipefail
 
@@ -59,16 +69,75 @@ jobs:
           gh issue edit "$ISSUE" --repo "$REPO" \
             --add-label "stage:implementing" --add-label "iteration-1"
 
+          # Labels say "implementing" from here on; if anything below fails,
+          # every failure path removes it again and adds stage:blocked so
+          # the state never claims progress that didn't actually happen.
+          block_issue() {
+            gh issue edit "$ISSUE" --repo "$REPO" \
+              --remove-label "stage:implementing" --add-label "stage:blocked"
+            gh issue comment "$ISSUE" --repo "$REPO" --body "$1"
+          }
+
+          default_branch="$(gh api "repos/$REPO" --jq '.default_branch')"
+          pr_number="$(gh pr list --repo "$REPO" --head "$BRANCH" --state all \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$pr_number" ]; then
+            echo "::notice::Reusing existing PR #$pr_number for branch '$BRANCH'."
+          else
+            if gh api "repos/$REPO/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
+              echo "::notice::Branch '$BRANCH' already exists; reusing it."
+            else
+              base_sha="$(gh api "repos/$REPO/git/ref/heads/$default_branch" --jq '.object.sha')"
+              base_tree="$(gh api "repos/$REPO/git/commits/$base_sha" --jq '.tree.sha')"
+              # An empty commit (same tree as the base) is enough to let
+              # GitHub open a PR immediately — creating a PR only requires
+              # head to be ahead of base by commits, not to already contain
+              # file changes. The real changes land via later pushes.
+              if ! new_commit="$(gh api "repos/$REPO/git/commits" \
+                  -f message="Start implementation for #$ISSUE" \
+                  -f tree="$base_tree" -f "parents[]=$base_sha" --jq '.sha')"; then
+                block_issue "Plan approved, but creating the working branch failed (could not create the initial commit). Loop stopped: **stage:blocked** — create the branch/PR manually, then re-apply \`stage:implementing\` to resume."
+                exit 0
+              fi
+              if ! gh api "repos/$REPO/git/refs" \
+                  -f ref="refs/heads/$BRANCH" -f sha="$new_commit" >/dev/null; then
+                block_issue "Plan approved, but creating the working branch '$BRANCH' failed. Loop stopped: **stage:blocked** — create the branch/PR manually, then re-apply \`stage:implementing\` to resume."
+                exit 0
+              fi
+            fi
+
+            issue_title="$(gh issue view "$ISSUE" --repo "$REPO" --json title --jq '.title')"
+            pr_body="$(sed "s/#<!-- issue number -->/#$ISSUE/" .github/PULL_REQUEST_TEMPLATE.md)"
+
+            if ! pr_url="$(gh pr create --repo "$REPO" --base "$default_branch" --head "$BRANCH" \
+                --draft --title "$issue_title (#$ISSUE)" --body "$pr_body")"; then
+              block_issue "Plan approved, and branch \`$BRANCH\` was created, but opening the draft PR failed. Loop stopped: **stage:blocked** — open the PR manually from that branch, then re-apply \`stage:implementing\` to resume."
+              exit 0
+            fi
+            pr_number="${pr_url##*/}"
+          fi
+
+          # Mirror area:* labels from the issue onto the PR, plus pipeline
+          # state — handle-review-verdict (below) manages PR labels, not
+          # issue labels, from this point on.
+          gh pr edit "$pr_number" --repo "$REPO" \
+            --add-label "stage:implementing" --add-label "iteration-1"
+          while IFS= read -r label; do
+            [ -n "$label" ] && gh pr edit "$pr_number" --repo "$REPO" --add-label "$label"
+          done < <(grep -x 'area:[a-z]*' <<<"$CURRENT_LABELS" || true)
+
           if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE"; then
             gh issue comment "$ISSUE" --repo "$REPO" --body \
-              "Plan approved. Starting **iteration 1/$MAX_ITERATIONS**: implement -> test -> review. See \`docs/orchestration.md\`."
+              "Plan approved. Opened draft PR #$pr_number on branch \`$BRANCH\` and started **iteration 1/$MAX_ITERATIONS**: implement -> test -> review. See \`docs/orchestration.md\`."
+            gh pr comment "$pr_number" --repo "$REPO" --body \
+              "Assigned \`$ASSIGNEE\` to implement this story. Starting **iteration 1/$MAX_ITERATIONS**: implement -> test -> review."
           else
             # Labels say "implementing" but no agent was actually assigned —
             # make that discrepancy visible rather than leaving it implicit.
-            gh issue edit "$ISSUE" --repo "$REPO" \
+            gh pr edit "$pr_number" --repo "$REPO" \
               --remove-label "stage:implementing" --add-label "stage:blocked"
-            gh issue comment "$ISSUE" --repo "$REPO" --body \
-              "Plan approved, but auto-assigning \`$ASSIGNEE\` failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
+            block_issue "Plan approved and draft PR #$pr_number opened, but auto-assigning \`$ASSIGNEE\` failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
           fi
 
   handle-review-verdict:

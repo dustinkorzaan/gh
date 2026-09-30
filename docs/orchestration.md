@@ -33,27 +33,53 @@ below.
 - A human reviews the plan and adds the `approved-plan` label. **Nothing is
   implemented before this label is present.**
 - `.github/workflows/orchestrator.yml` (`release-approved-plan` job) reacts
-  to that label: it removes `stage:interview`/`stage:planned`, adds
-  `stage:implementing` + `iteration-1`, and assigns the issue to the Copilot
-  coding agent to start work. If that assignment fails, it backs out
-  `stage:implementing` and applies `stage:blocked` instead — the label state
-  never claims an agent is working when none was actually assigned.
+  to that label and does all of the following automatically — no manual
+  branch or PR creation is required:
+  1. Removes `stage:interview`/`stage:planned` and adds
+     `stage:implementing` + `iteration-1` on the issue.
+  2. Creates a working branch named `story/<issue-number>` off the
+     repository's default branch (via the Git Data API: an empty commit on
+     top of the default branch's tip, so the branch is one commit ahead and
+     a PR can be opened immediately, before any real changes exist).
+  3. Opens a **draft PR** from that branch back to the default branch,
+     titled from the issue title, with `Closes #<issue>` populated from
+     `.github/PULL_REQUEST_TEMPLATE.md`. This step — and the branch-creation
+     step before it — are idempotent: if a PR or branch for this issue
+     already exists (e.g. the workflow re-ran), the existing one is reused
+     instead of creating a duplicate.
+  4. Mirrors the issue's `area:*` labels onto the new PR, and adds
+     `stage:implementing` + `iteration-1` to the PR too — from this point
+     on, `handle-review-verdict` (below) manages the PR's labels, since the
+     PR (not the issue) is what carries the pipeline state through
+     implement/test/review.
+  5. Assigns the issue to the Copilot coding agent to start work on that
+     branch.
+  - If branch creation, PR creation, or assignment fails at any point, it
+    backs out `stage:implementing` and applies `stage:blocked` instead — the
+    label state never claims progress that didn't actually happen.
+  - **Caveat:** if your Copilot coding agent is configured to open its own
+    PR automatically upon issue assignment, that can produce a second PR
+    alongside the one this workflow creates. Disable that auto-PR behavior
+    (or point the agent at the pre-created branch) to avoid duplicates.
 
 ### 2. Implement / execute
 
 - The **Implementer agent** (Copilot coding agent session) makes the actual
   code changes with the standard runtime tools (`bash`, `edit`, `create`,
   `view`), scoped to whichever of `/ui`, `/api` (or infra) the plan calls
-  for.
+  for, pushing commits to the `story/<issue-number>` branch that
+  `release-approved-plan` already created.
 - Before adding/bumping any dependency, run
   `runtime-tools-gh-advisory-database` for that ecosystem (`npm` for `/ui`,
   `nuget` for `/api`).
 - Before every commit, run `runtime-tools-secret_scanning` — this stack
   touches Entra ID client config, Azure SQL connection strings, and
   SAS/Blob settings, so this check is not optional.
-- The agent uses the **GitHub MCP server** to open/update the PR and keep
-  the `stage:*` / `iteration-N` labels and the PR checklist
-  (`.github/PULL_REQUEST_TEMPLATE.md`) in sync with progress.
+- The agent uses the **GitHub MCP server** to update the existing draft PR
+  (description, review-thread replies) and keep the `stage:*` /
+  `iteration-N` labels and the PR checklist
+  (`.github/PULL_REQUEST_TEMPLATE.md`) in sync with progress. It does not
+  need to create the PR itself — that already happened in stage 1.
 
 ### 3. Test & verify
 
