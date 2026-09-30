@@ -18,6 +18,11 @@ permissions:
 jobs:
   sync-area-labels:
     runs-on: ubuntu-latest
+    # Serialize per-issue: this is a check-then-act label sync (read current
+    # labels, then add/remove based on the diff), so rapid successive
+    # opened/edited events on the same issue could otherwise race.
+    concurrency:
+      group: sync-area-labels-${{ github.event.issue.number }}
     steps:
       - uses: actions/checkout@v4
 

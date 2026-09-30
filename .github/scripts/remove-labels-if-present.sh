@@ -16,8 +16,12 @@ kind="$1" # "issue" or "pr"
 number="$2"
 shift 2
 
+# Fail loudly rather than silently treating every label as absent if a
+# caller forgets to export CURRENT_LABELS.
+: "${CURRENT_LABELS?CURRENT_LABELS must be exported before calling this script}"
+
 for label in "$@"; do
-  if grep -qx "$label" <<<"${CURRENT_LABELS:-}"; then
+  if grep -qx "$label" <<<"$CURRENT_LABELS"; then
     gh "$kind" edit "$number" --repo "$REPO" --remove-label "$label"
   fi
 done
