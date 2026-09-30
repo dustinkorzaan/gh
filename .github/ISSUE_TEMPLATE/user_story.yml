@@ -67,7 +67,6 @@ body:
         ### Next steps
         1. The Planner agent will post a draft plan as a comment on this
            issue.
-        2. A human reviews it and comments `/approve-plan` (or adds the
-           `approved-plan` label) to release it into the implement/test/review
-           loop.
+        2. A human reviews it and adds the `approved-plan` label to release
+           it into the implement/test/review loop.
         3. Nothing is implemented before approval.

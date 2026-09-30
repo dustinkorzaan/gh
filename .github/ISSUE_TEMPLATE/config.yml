@@ -1,5 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: Orchestration pipeline docs
-    url: https://github.com/dustinkorzaan/gh/blob/main/docs/orchestration.md
-    about: Read how the plan-interview / implement / test / review loop works before filing a story.
