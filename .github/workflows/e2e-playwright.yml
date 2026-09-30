@@ -1,0 +1,62 @@
+name: E2E - Playwright (UI stories only)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "ui/**"
+      - "api/**"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    # Only run for stories flagged as touching the UI. This keeps
+    # api-only iterations fast, per docs/orchestration.md.
+    if: contains(github.event.pull_request.labels.*.name, 'area:ui')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Playwright config
+        id: check
+        run: |
+          if [ -f package.json ] && { [ -f playwright.config.ts ] || [ -f playwright.config.js ]; }; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Playwright config under ui/ yet; skipping E2E."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.exists == 'true'
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        run: npm ci
+
+      - name: Install Playwright browsers
+        if: steps.check.outputs.exists == 'true'
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        if: steps.check.outputs.exists == 'true'
+        # App must be started against a test Entra ID tenant / test API
+        # per docs/orchestration.md before this step runs in a real setup.
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: steps.check.outputs.exists == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: ui/playwright-report/
+          retention-days: 14

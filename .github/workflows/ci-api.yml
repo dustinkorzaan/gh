@@ -1,0 +1,51 @@
+name: CI - API
+
+on:
+  pull_request:
+    paths:
+      - "api/**"
+      - ".github/workflows/ci-api.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/ci-api.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check api/ exists
+        id: check
+        run: |
+          if compgen -G "*.sln" > /dev/null || compgen -G "**/*.csproj" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No .sln/.csproj found under api/ yet; skipping API CI."
+          fi
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.check.outputs.exists == 'true'
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        if: steps.check.outputs.exists == 'true'
+        run: dotnet restore
+
+      - name: Build
+        if: steps.check.outputs.exists == 'true'
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        if: steps.check.outputs.exists == 'true'
+        run: dotnet test --no-build --configuration Release

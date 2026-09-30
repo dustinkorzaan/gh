@@ -1,0 +1,91 @@
+name: Orchestrator - loop control
+
+# State machine that drives the implement -> test -> review loop described in
+# docs/orchestration.md. It never merges anything and never runs before a
+# human has added the `approved-plan` label. It only manages labels/comments;
+# the actual implement/test/review work is done by agent sessions (Copilot
+# coding agent + reviewer agent) reacting to those labels/comments.
+
+on:
+  issues:
+    types: [labeled]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  release-approved-plan:
+    # Plan interview & approval gate -> kicks off iteration 1.
+    if: >-
+      github.event_name == 'issues' && github.event.label.name == 'approved-plan' &&
+      !contains(github.event.issue.labels.*.name, 'stage:paused')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move issue into implementation, start iteration 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE" --repo "$REPO" \
+            --remove-label "stage:interview" --remove-label "stage:planned" \
+            --add-label "stage:implementing" --add-label "iteration-1"
+          gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "copilot" || \
+            echo "::warning::Could not auto-assign Copilot coding agent; assign it manually to start iteration 1."
+          gh issue comment "$ISSUE" --repo "$REPO" --body \
+            "Plan approved. Starting **iteration 1/3**: implement -> test -> review. See \`docs/orchestration.md\`."
+
+  handle-review-verdict:
+    # Peer review stage -> decides whether to stop or loop again.
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      !contains(github.event.pull_request.labels.*.name, 'stage:paused')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Advance or stop the loop based on the review verdict
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+        run: |
+          set -euo pipefail
+
+          labels="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
+
+          current_iteration=1
+          for n in 1 2 3; do
+            if grep -qx "iteration-$n" <<<"$labels"; then
+              current_iteration=$n
+            fi
+          done
+
+          if [ "$REVIEW_STATE" = "approved" ]; then
+            gh pr edit "$PR" --repo "$REPO" \
+              --remove-label "stage:implementing" --remove-label "stage:testing" \
+              --remove-label "stage:reviewing" --add-label "stage:ready-for-human"
+            gh pr comment "$PR" --repo "$REPO" --body \
+              "Peer review passed on iteration $current_iteration/3. Loop stopped: **stage:ready-for-human** — ready for final human review."
+
+          elif [ "$REVIEW_STATE" = "changes_requested" ]; then
+            if [ "$current_iteration" -ge 3 ]; then
+              gh pr edit "$PR" --repo "$REPO" \
+                --remove-label "stage:implementing" --remove-label "stage:testing" \
+                --remove-label "stage:reviewing" --add-label "stage:ready-for-human"
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Reached the 3-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** (flagged — needs human triage of outstanding review comments)."
+            else
+              next=$((current_iteration + 1))
+              gh pr edit "$PR" --repo "$REPO" \
+                --remove-label "iteration-$current_iteration" --add-label "iteration-$next" \
+                --remove-label "stage:reviewing" --add-label "stage:implementing"
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Review requested changes on iteration $current_iteration/3. Starting **iteration $next/3**: implement -> test -> review, addressing the open review comments."
+            fi
+          fi
