@@ -88,6 +88,11 @@ below.
     proxying through API endpoints.
 - `.github/workflows/orchestrator.yml` (`handle-review-verdict` job) reacts
   to the submitted review:
+  - It first checks the reviewer's repository permission via `gh api
+    repos/{owner}/{repo}/collaborators/{user}/permission` and ignores the
+    review entirely unless it's at least `write` — a read/triage-only
+    account's verdict must not be able to drive privileged label
+    transitions.
   - `approved` (+ green CI) → labels the PR `stage:ready-for-human` and
     **stops the loop**.
   - `changes_requested` → increments the iteration label (`iteration-1` ->

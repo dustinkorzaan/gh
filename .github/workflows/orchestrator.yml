@@ -30,6 +30,8 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'stage:paused')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Move issue into implementation, start iteration 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,17 +41,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          labels="$(gh issue view "$ISSUE" --repo "$REPO" --json labels --jq '.labels[].name')"
-          # Note: if the issue has no labels, $labels is empty and every
-          # grep below simply won't match — safe by design. `set -e` also
-          # means a failed `gh issue view` call aborts this step rather than
-          # silently proceeding as if there were no labels.
+          CURRENT_LABELS="$(gh issue view "$ISSUE" --repo "$REPO" --json labels --jq '.labels[].name')"
+          export CURRENT_LABELS
+          # Note: if the issue has no labels, CURRENT_LABELS is empty and
+          # every check in the shared script below simply won't match —
+          # safe by design. `set -e` also means a failed `gh issue view`
+          # call aborts this step rather than silently proceeding as if
+          # there were no labels.
 
-          for label in "stage:interview" "stage:planned"; do
-            if grep -qx "$label" <<<"$labels"; then
-              gh issue edit "$ISSUE" --repo "$REPO" --remove-label "$label"
-            fi
-          done
+          .github/scripts/remove-labels-if-present.sh issue "$ISSUE" \
+            "stage:interview" "stage:planned"
 
           gh issue edit "$ISSUE" --repo "$REPO" \
             --add-label "stage:implementing" --add-label "iteration-1"
@@ -81,23 +82,31 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEWER: ${{ github.event.review.user.login }}
         run: |
           set -euo pipefail
 
-          labels="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
+          # Reviews drive privileged label transitions (up to
+          # stage:ready-for-human), so only act on reviews from someone with
+          # at least write access — a read/triage-only reviewer's verdict
+          # must not be able to advance or stop the loop.
+          permission="$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq '.permission')"
+          case "$permission" in
+            write|maintain|admin) ;;
+            *)
+              echo "::notice::Ignoring review from '$REVIEWER' (permission: $permission) — insufficient access to drive the orchestrator."
+              exit 0
+              ;;
+          esac
 
-          remove_label_if_present() {
-            local label="$1"
-            if grep -qx "$label" <<<"$labels"; then
-              gh pr edit "$PR" --repo "$REPO" --remove-label "$label"
-            fi
-          }
+          CURRENT_LABELS="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
+          export CURRENT_LABELS
 
           found_iteration=""
           current_iteration=1
           iteration_label_count=0
           for n in 1 2 3; do
-            if grep -qx "iteration-$n" <<<"$labels"; then
+            if grep -qx "iteration-$n" <<<"$CURRENT_LABELS"; then
               found_iteration=1
               current_iteration=$n
               iteration_label_count=$((iteration_label_count + 1))
@@ -111,9 +120,8 @@ jobs:
           fi
 
           if [ "$REVIEW_STATE" = "approved" ]; then
-            remove_label_if_present "stage:implementing"
-            remove_label_if_present "stage:testing"
-            remove_label_if_present "stage:reviewing"
+            .github/scripts/remove-labels-if-present.sh pr "$PR" \
+              "stage:implementing" "stage:testing" "stage:reviewing"
             gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
             gh pr comment "$PR" --repo "$REPO" --body \
               "Peer review passed on iteration $current_iteration/3. Loop stopped: **stage:ready-for-human** — ready for final human review."
@@ -122,22 +130,21 @@ jobs:
             if [ -z "$found_iteration" ]; then
               # Can't safely determine which iteration we're on; stop rather
               # than risk looping indefinitely or mislabeling progress.
-              remove_label_if_present "stage:implementing"
-              remove_label_if_present "stage:testing"
+              .github/scripts/remove-labels-if-present.sh pr "$PR" \
+                "stage:implementing" "stage:testing"
               gh pr edit "$PR" --repo "$REPO" --add-label "stage:blocked"
               gh pr comment "$PR" --repo "$REPO" --body \
                 "Changes requested, but no \`iteration-N\` label was found on this PR. Loop stopped: **stage:blocked** — needs human triage before continuing."
             elif [ "$current_iteration" -ge 3 ]; then
-              remove_label_if_present "stage:implementing"
-              remove_label_if_present "stage:testing"
-              remove_label_if_present "stage:reviewing"
+              .github/scripts/remove-labels-if-present.sh pr "$PR" \
+                "stage:implementing" "stage:testing" "stage:reviewing"
               gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
               gh pr comment "$PR" --repo "$REPO" --body \
                 "Reached the 3-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** (flagged — needs human triage of outstanding review comments)."
             else
               next=$((current_iteration + 1))
-              remove_label_if_present "iteration-$current_iteration"
-              remove_label_if_present "stage:reviewing"
+              .github/scripts/remove-labels-if-present.sh pr "$PR" \
+                "iteration-$current_iteration" "stage:reviewing"
               gh pr edit "$PR" --repo "$REPO" \
                 --add-label "iteration-$next" --add-label "stage:implementing"
               gh pr comment "$PR" --repo "$REPO" --body \
