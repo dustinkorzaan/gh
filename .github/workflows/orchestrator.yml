@@ -113,13 +113,31 @@ jobs:
               --remove-label "stage:implementing" --add-label "stage:blocked"
             gh issue comment "$ISSUE" --repo "$REPO" --body "$1"
           }
+          # Catch-all: the explicit `if ! cmd; then block_issue ...; fi`
+          # checks above cover the known failure points, but any other
+          # command failing under `set -e` (e.g. a transient API error on
+          # one of the label-mirroring calls below) would otherwise abort
+          # the step silently, leaving the issue labeled stage:implementing
+          # with no comment and no stage:blocked. `if`-tested commands
+          # don't trigger ERR, so this doesn't double-fire for the
+          # explicit checks above.
+          catchall_msg="Plan approved, but automation failed partway through setup - see this workflow run's logs for the failing command. Loop stopped: **stage:blocked** - finish the remaining setup manually (branch/PR/labels/assignment), then manually remove stage:blocked and add stage:implementing once done - no workflow re-triggers automatically on those label changes."
+          trap 'block_issue "$catchall_msg"' ERR
 
           default_branch="$(gh api "repos/$REPO" --jq '.default_branch')"
           # Only reuse an open PR — a closed/merged PR for this branch name
           # (e.g. an abandoned/superseded prior attempt) can't receive new
           # commits/reviews, so treat that case the same as "no PR yet".
+          #
+          # `gh pr list --head` does not support "<owner>:<branch>" syntax
+          # (it matches by ref name alone), so without an extra filter this
+          # could match a fork PR that happens to use the same branch name
+          # as our generated `story/<n>` branch — e.g. an attacker-opened
+          # fork PR — and we'd mistake it for "our" PR. Filter explicitly
+          # to same-repository (non-cross-repository) PRs only.
           pr_number="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
-            --json number --jq '.[0].number // empty')"
+            --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')"
 
           if [ -n "$pr_number" ]; then
             echo "::notice::Reusing existing PR #$pr_number for branch '$BRANCH'."
@@ -308,9 +326,10 @@ jobs:
             elif [ "$current_iteration" -ge "$MAX_ITERATIONS" ]; then
               .github/scripts/remove-labels-if-present.sh pr "$PR" \
                 "stage:implementing" "stage:testing" "stage:reviewing"
-              gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
+              gh pr edit "$PR" --repo "$REPO" \
+                --add-label "stage:ready-for-human" --add-label "needs-triage"
               gh pr comment "$PR" --repo "$REPO" --body \
-                "Reached the $MAX_ITERATIONS-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** (flagged — needs human triage of outstanding review comments)."
+                "Reached the $MAX_ITERATIONS-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** + **needs-triage** — needs human triage of outstanding review comments before merge."
             else
               next=$((current_iteration + 1))
               .github/scripts/remove-labels-if-present.sh pr "$PR" \

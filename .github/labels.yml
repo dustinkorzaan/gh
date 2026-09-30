@@ -30,6 +30,9 @@
 - name: "stage:paused"
   color: "e99695"
   description: "Manual kill switch; orchestrator must not act while present."
+- name: "needs-triage"
+  color: "d93f0b"
+  description: "Loop stopped at the 3-iteration cap without a clean peer review; needs human triage before merge."
 
 # --- Iteration counters (mutually exclusive; max iteration-3) ---
 - name: "iteration-1"
