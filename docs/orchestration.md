@@ -25,7 +25,12 @@ below.
 
 - A user story is filed with `.github/ISSUE_TEMPLATE/user_story.yml`
   (`stage:interview`), tagging affected areas (`area:ui` / `area:api` /
-  `area:infra`).
+  `area:infra`) via checkboxes. GitHub issue forms only record checkbox
+  state as text in the issue body, not as real labels, so
+  `.github/workflows/sync-area-labels.yml` runs on every issue
+  open/edit and applies/removes the matching `area:*` labels — everything
+  downstream (the orchestrator's label mirroring, the E2E workflow's
+  `area:ui` gate) depends on those labels actually existing.
 - A **Planner agent** session uses the **GitHub MCP server**
   (`issue_read`, `list_issues`) to read the story and posts a draft
   implementation plan as an issue comment, moving the issue to

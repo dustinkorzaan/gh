@@ -104,12 +104,12 @@ jobs:
                   -f message="Start implementation for #$ISSUE" \
                   -f tree="$base_tree" -f "parents[]=$base_sha" --jq '.sha')"; then
                 block_issue "Plan approved, but creating the working branch failed (could not create the initial commit). Loop stopped: **stage:blocked** — create the branch/PR manually, then re-apply \`stage:implementing\` to resume."
-                exit 0
+                exit 1
               fi
               if ! gh api "repos/$REPO/git/refs" \
                   -f ref="refs/heads/$BRANCH" -f sha="$new_commit" >/dev/null; then
                 block_issue "Plan approved, but creating the working branch '$BRANCH' failed. Loop stopped: **stage:blocked** — create the branch/PR manually, then re-apply \`stage:implementing\` to resume."
-                exit 0
+                exit 1
               fi
             fi
 
@@ -119,7 +119,7 @@ jobs:
             if ! pr_url="$(gh pr create --repo "$REPO" --base "$default_branch" --head "$BRANCH" \
                 --draft --title "$issue_title (#$ISSUE)" --body "$pr_body")"; then
               block_issue "Plan approved, and branch \`$BRANCH\` was created, but opening the draft PR failed. Loop stopped: **stage:blocked** — open the PR manually from that branch, then re-apply \`stage:implementing\` to resume."
-              exit 0
+              exit 1
             fi
             pr_number="${pr_url##*/}"
           fi
@@ -144,6 +144,7 @@ jobs:
             gh pr edit "$pr_number" --repo "$REPO" \
               --remove-label "stage:implementing" --add-label "stage:blocked"
             block_issue "Plan approved and draft PR #$pr_number opened, but auto-assigning \`$ASSIGNEE\` failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
+            exit 1
           fi
 
   handle-review-verdict:
