@@ -1,0 +1,72 @@
+name: CI - API
+
+on:
+  pull_request:
+    paths:
+      - "api/**"
+      - ".github/workflows/ci-api.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/ci-api.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check api/ exists
+        id: check
+        run: |
+          shopt -s globstar nullglob
+          sln_files=(api/*.sln)
+          csproj_files=(api/**/*.csproj)
+          if [ "${#sln_files[@]}" -gt 0 ] || [ "${#csproj_files[@]}" -gt 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No .sln/.csproj found under api/ yet; skipping API CI."
+          fi
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.check.outputs.exists == 'true'
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        if: steps.check.outputs.exists == 'true'
+        working-directory: api
+        run: dotnet restore
+
+      - name: Build
+        if: steps.check.outputs.exists == 'true'
+        working-directory: api
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        if: steps.check.outputs.exists == 'true'
+        working-directory: api
+        # `dotnet test` exits 0 even when it finds zero test projects/cases
+        # (e.g. the .sln only contains a class library, or a test project
+        # with no test methods) — the orchestrator's CI gate treats job
+        # success as "green CI", so a project with zero test coverage must
+        # not be indistinguishable from "tests passed". Capture output and
+        # fail explicitly when dotnet reports no tests ran.
+        run: |
+          set +e
+          output="$(dotnet test --no-build --configuration Release 2>&1)"
+          exit_code=$?
+          set -e
+          echo "$output"
+          if [ "$exit_code" -ne 0 ]; then
+            exit "$exit_code"
+          fi
+          if echo "$output" | grep -qiE 'no test (is available|matches|source files)|Total tests: 0\b'; then
+            echo "::error::dotnet test reported zero tests. A story with area:api must have a runnable test suite before CI can be green." >&2
+            exit 1
+          fi

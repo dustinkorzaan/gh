@@ -1,0 +1,72 @@
+name: User Story (multi-agent pipeline)
+description: >
+  Kick off the plan-interview stage of the multi-agent implement/test/review
+  loop. This form captures everything the Planner agent needs to draft an
+  implementation plan for human approval.
+title: "[Story] "
+labels:
+  - "stage:interview"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue drives the automated pipeline described in
+        `docs/orchestration.md`. Fill it out completely — the Planner agent
+        will use it to draft a plan, and nothing will be implemented until a
+        human explicitly approves that plan.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the user story.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Bullet list of concrete, testable conditions for "done".
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: Affected areas
+      description: >
+        Determines which CI jobs, review checklists, and stack-specific
+        checks (npm/dotnet/Playwright) the orchestrator will run.
+      options:
+        - label: "ui (`/ui` — Vite/React/RTK)"
+        - label: "api (`/api` — C#)"
+        - label: "infra (Bicep/ACA/Azure SQL/Entra ID/Blob)"
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals / out of scope
+      description: What should the Planner and Implementer explicitly NOT do?
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints & context
+      description: >
+        Auth (Entra ID) scopes, Azure SQL schema impact, blob/SAS
+        considerations, or other technical constraints the Planner should
+        account for.
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Next steps
+        1. The Planner agent will post a draft plan as a comment on this
+           issue.
+        2. A human reviews it and adds the `approved-plan` label to release
+           it into the implement/test/review loop.
+        3. Nothing is implemented before approval.
