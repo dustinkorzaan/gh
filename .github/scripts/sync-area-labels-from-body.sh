@@ -19,9 +19,10 @@ current_labels="$(gh issue view "$issue" --repo "$repo" --json labels --jq '.lab
 # Restrict matching to the "Affected areas" section only (from its heading
 # up to the next "### " heading or end of body) — otherwise a checked
 # acceptance-criteria item like "- [x] API returns a SAS URL" would be
-# mistaken for the areas checkbox. Case-sensitive, full option-text prefix
-# match (not just the bare word) so a criterion starting with "ui"/"api"/
-# "infra" can't be mistaken for the checkbox either.
+# mistaken for the areas checkbox. Full option-text prefix match (not just
+# the bare word) so a criterion starting with "ui"/"api"/"infra" can't be
+# mistaken for the checkbox either. Both "- [x]" and "- [X]" are accepted,
+# since GitHub renders a checked issue-form checkbox as either case.
 areas_section="$(awk '
   /^### Affected areas/ { in_section = 1; next }
   /^### / { in_section = 0 }
@@ -32,7 +33,7 @@ for entry in "ui:ui (\`/ui\`" "api:api (\`/api\`" "infra:infra (Bicep"; do
   area="${entry%%:*}"
   prefix="${entry#*:}"
   label="area:$area"
-  if grep -qF -- "- [x] $prefix" <<<"$areas_section"; then
+  if grep -qF -- "- [x] $prefix" <<<"$areas_section" || grep -qF -- "- [X] $prefix" <<<"$areas_section"; then
     if ! grep -qx "$label" <<<"$current_labels"; then
       gh issue edit "$issue" --repo "$repo" --add-label "$label"
     fi

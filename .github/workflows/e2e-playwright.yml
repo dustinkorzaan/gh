@@ -39,11 +39,21 @@ jobs:
       - name: Check for Playwright config
         id: check
         run: |
-          if [ -f ui/package.json ] && { [ -f ui/playwright.config.ts ] || [ -f ui/playwright.config.js ]; }; then
+          # Skipping is only correct while ui/ doesn't exist yet (the UI
+          # story hasn't started implementation). Once ui/package.json
+          # exists on an area:ui PR, a missing Playwright config must fail
+          # the job rather than silently skip — this is the only check
+          # that actually proves the cross-stack UI<->API<->Blob contract,
+          # per docs/orchestration.md, so treating "no E2E suite" as green
+          # CI would defeat the point of gating on area:ui.
+          if [ ! -f ui/package.json ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ui/package.json not found yet; skipping E2E."
+          elif [ -f ui/playwright.config.ts ] || [ -f ui/playwright.config.js ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No Playwright config under ui/ yet; skipping E2E."
+            echo "::error::ui/package.json exists but no playwright.config.ts|js was found. A story labeled area:ui must have a runnable Playwright E2E suite before CI can be green." >&2
+            exit 1
           fi
 
       - uses: actions/setup-node@v4

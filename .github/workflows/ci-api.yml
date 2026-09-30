@@ -51,9 +51,22 @@ jobs:
       - name: Test
         if: steps.check.outputs.exists == 'true'
         working-directory: api
-        # No --if-present equivalent for dotnet: if a project exists but
-        # defines no tests, this should fail loudly rather than silently
-        # report green, because the orchestrator's CI gate treats job
-        # success as "green CI" — a project with zero test coverage must
-        # not be indistinguishable from "tests passed".
-        run: dotnet test --no-build --configuration Release
+        # `dotnet test` exits 0 even when it finds zero test projects/cases
+        # (e.g. the .sln only contains a class library, or a test project
+        # with no test methods) — the orchestrator's CI gate treats job
+        # success as "green CI", so a project with zero test coverage must
+        # not be indistinguishable from "tests passed". Capture output and
+        # fail explicitly when dotnet reports no tests ran.
+        run: |
+          set +e
+          output="$(dotnet test --no-build --configuration Release 2>&1)"
+          exit_code=$?
+          set -e
+          echo "$output"
+          if [ "$exit_code" -ne 0 ]; then
+            exit "$exit_code"
+          fi
+          if echo "$output" | grep -qiE 'no test (is available|matches|source files)|Total tests: 0\b'; then
+            echo "::error::dotnet test reported zero tests. A story with area:api must have a runnable test suite before CI can be green." >&2
+            exit 1
+          fi

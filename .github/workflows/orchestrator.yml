@@ -188,10 +188,16 @@ jobs:
           # (e.g. GITHUB_TOKEN lacking the scope to assign the coding-agent
           # bot) — it does not error, so `gh issue edit ... --add-assignee`
           # succeeding is not proof anyone was actually assigned. Verify by
-          # re-reading the assignee list afterwards.
+          # re-reading the assignee list afterwards. Note the actual
+          # assignee login GitHub records for the coding agent is
+          # `copilot-swe-agent[bot]`, not the literal `$ASSIGNEE` value
+          # ("copilot") used as the --add-assignee argument — so this
+          # check matches loosely on "copilot" appearing anywhere in the
+          # returned login, rather than requiring an exact match that could
+          # never succeed even when assignment actually worked.
           gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE" || true
           actual_assignees="$(gh issue view "$ISSUE" --repo "$REPO" --json assignees --jq '.assignees[].login')"
-          if grep -qxi "$ASSIGNEE" <<<"$actual_assignees"; then
+          if grep -qi 'copilot' <<<"$actual_assignees"; then
             gh issue comment "$ISSUE" --repo "$REPO" --body \
               "Plan approved. Opened draft PR #$pr_number on branch \`$BRANCH\` and started **iteration 1/$MAX_ITERATIONS**: implement -> test -> review. See \`docs/orchestration.md\`."
             gh pr comment "$pr_number" --repo "$REPO" --body \
@@ -298,10 +304,14 @@ jobs:
             # workflow's own check run: it is itself still "in progress" for
             # this exact commit while this step runs, which would otherwise
             # make the rollup perpetually PENDING and this branch
-            # unreachable.
+            # unreachable. `statusCheckRollup` entries expose the *job*
+            # name in `.name`/`.context` (e.g. "handle-review-verdict") but
+            # the *workflow* title in `.workflowName` — filtering on
+            # `.name`/`.context` would never match this workflow's own
+            # entry, leaving the rollup stuck on PENDING forever.
             # shellcheck disable=SC2016 # jq's own $c syntax, not a shell var.
             ci_state="$(gh pr view "$PR" --repo "$REPO" --json statusCheckRollup \
-              --jq '[.statusCheckRollup[] | select(.name // .context | startswith("Orchestrator - loop control") | not) | .conclusion] as $c | if ($c|length)==0 then "PENDING" elif ($c | any(. == "FAILURE" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) then "FAILURE" elif ($c | any(. == null)) then "PENDING" else "SUCCESS" end')"
+              --jq '[.statusCheckRollup[] | select((.workflowName // "") != "Orchestrator - loop control") | .conclusion] as $c | if ($c|length)==0 then "PENDING" elif ($c | any(. == "FAILURE" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) then "FAILURE" elif ($c | any(. == null)) then "PENDING" else "SUCCESS" end')"
 
             if [ "$ci_state" = "SUCCESS" ]; then
               .github/scripts/remove-labels-if-present.sh pr "$PR" \
@@ -316,13 +326,14 @@ jobs:
 
           elif [ "$REVIEW_STATE" = "changes_requested" ]; then
             if [ -z "$found_iteration" ]; then
-              # Can't safely determine which iteration we're on; stop rather
-              # than risk looping indefinitely or mislabeling progress.
-              .github/scripts/remove-labels-if-present.sh pr "$PR" \
-                "stage:implementing" "stage:testing"
-              gh pr edit "$PR" --repo "$REPO" --add-label "stage:blocked"
-              gh pr comment "$PR" --repo "$REPO" --body \
-                "Changes requested, but no \`iteration-N\` label was found on this PR. Loop stopped: **stage:blocked** — needs human triage before continuing."
+              # No (unambiguous) iteration-N label — same "not being
+              # orchestrated" case as the approved branch above. Leave the
+              # PR alone rather than labeling stage:blocked, or every
+              # changes_requested review on an unrelated PR in this repo
+              # (once this workflow is on the default branch) would get
+              # blocked by the orchestrator.
+              echo "::notice::Ignoring 'changes_requested' review on PR #$PR — no unambiguous iteration-N label present, so this PR isn't being tracked by the orchestrator loop."
+              exit 0
             elif [ "$current_iteration" -ge "$MAX_ITERATIONS" ]; then
               .github/scripts/remove-labels-if-present.sh pr "$PR" \
                 "stage:implementing" "stage:testing" "stage:reviewing"
