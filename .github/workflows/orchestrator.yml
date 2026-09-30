@@ -156,6 +156,12 @@ jobs:
       github.event_name == 'pull_request_review' &&
       !contains(github.event.pull_request.labels.*.name, 'stage:paused')
     runs-on: ubuntu-latest
+    # Serialize per-PR: this job does a check-then-act label transition
+    # (read iteration/stage labels, then add/remove), so two review-verdict
+    # events submitted close together for the same PR could otherwise race
+    # and produce inconsistent iteration/stage labels.
+    concurrency:
+      group: handle-review-verdict-${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v4
 
