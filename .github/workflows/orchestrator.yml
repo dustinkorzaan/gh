@@ -90,15 +90,16 @@ jobs:
           MAX_ITERATIONS: ${{ env.MAX_ITERATIONS }}
         run: |
           set -euo pipefail
-
           # Reviews drive privileged label transitions (up to
           # stage:ready-for-human), so only act on reviews from someone with
           # at least write access — a read/triage-only reviewer's verdict
           # must not be able to advance or stop the loop. Fail safe (skip,
           # don't hard-fail the job) if the permission check itself can't be
           # made, e.g. due to token scope limits on this endpoint.
-          if ! permission="$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq '.permission' 2>&1)"; then
-            echo "::warning::Could not determine repository permission for '$REVIEWER' ($permission); skipping this review verdict rather than risk acting without authorization."
+          permission_err=""
+          if ! permission="$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq '.permission' 2>/tmp/permission_err)"; then
+            permission_err="$(cat /tmp/permission_err)"
+            echo "::warning::Could not determine repository permission for '$REVIEWER' ($permission_err); skipping this review verdict rather than risk acting without authorization."
             exit 0
           fi
           case "$permission" in
@@ -130,11 +131,23 @@ jobs:
           fi
 
           if [ "$REVIEW_STATE" = "approved" ]; then
-            .github/scripts/remove-labels-if-present.sh pr "$PR" \
-              "stage:implementing" "stage:testing" "stage:reviewing"
-            gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
-            gh pr comment "$PR" --repo "$REPO" --body \
-              "Peer review passed on iteration $current_iteration/$MAX_ITERATIONS. Loop stopped: **stage:ready-for-human** — ready for final human review."
+            # "Approved" alone isn't a stop condition — docs/orchestration.md
+            # requires review pass AND green CI. Check the PR's status/check
+            # rollup before treating this as done.
+            # shellcheck disable=SC2016 # jq's own $c syntax, not a shell var.
+            ci_state="$(gh pr view "$PR" --repo "$REPO" --json statusCheckRollup \
+              --jq '[.statusCheckRollup[].conclusion] as $c | if ($c|length)==0 then "PENDING" elif ($c | any(. == "FAILURE" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) then "FAILURE" elif ($c | any(. == null)) then "PENDING" else "SUCCESS" end')"
+
+            if [ "$ci_state" = "SUCCESS" ]; then
+              .github/scripts/remove-labels-if-present.sh pr "$PR" \
+                "stage:implementing" "stage:testing" "stage:reviewing"
+              gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Peer review passed on iteration $current_iteration/$MAX_ITERATIONS and CI is green. Loop stopped: **stage:ready-for-human** — ready for final human review."
+            else
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Peer review passed on iteration $current_iteration/$MAX_ITERATIONS, but CI is not green yet (status: $ci_state). Staying in **stage:reviewing** until CI completes successfully; re-request/re-submit the review once CI passes to advance the loop."
+            fi
 
           elif [ "$REVIEW_STATE" = "changes_requested" ]; then
             if [ -z "$found_iteration" ]; then

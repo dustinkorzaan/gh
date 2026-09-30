@@ -95,8 +95,11 @@ below.
     transitions. If the permission check itself can't be made (e.g. token
     scope limits), it fails safe: skip the verdict rather than act without
     authorization.
-  - `approved` (+ green CI) → labels the PR `stage:ready-for-human` and
-    **stops the loop**.
+  - `approved` → checks the PR's status-check rollup (`gh pr view --json
+    statusCheckRollup`); only if CI is actually green does it label the PR
+    `stage:ready-for-human` and **stop the loop**. If CI is still pending or
+    failing, it leaves the PR in `stage:reviewing` and comments that the
+    review passed but CI must complete before the loop can stop.
   - `changes_requested` → increments the iteration label (`iteration-1` ->
     `iteration-2` -> `iteration-3`) and loops back to Implement, unless the
     cap has already been reached.
