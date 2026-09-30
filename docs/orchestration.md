@@ -35,7 +35,9 @@ below.
 - `.github/workflows/orchestrator.yml` (`release-approved-plan` job) reacts
   to that label: it removes `stage:interview`/`stage:planned`, adds
   `stage:implementing` + `iteration-1`, and assigns the issue to the Copilot
-  coding agent to start work.
+  coding agent to start work. If that assignment fails, it backs out
+  `stage:implementing` and applies `stage:blocked` instead — the label state
+  never claims an agent is working when none was actually assigned.
 
 ### 2. Implement / execute
 

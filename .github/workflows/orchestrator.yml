@@ -34,6 +34,8 @@ jobs:
           set -euo pipefail
 
           labels="$(gh issue view "$ISSUE" --repo "$REPO" --json labels --jq '.labels[].name')"
+          # Note: if the issue has no labels, $labels is empty and every
+          # grep below simply won't match — safe by design.
 
           for label in "stage:interview" "stage:planned"; do
             if grep -qx "$label" <<<"$labels"; then
@@ -43,10 +45,18 @@ jobs:
 
           gh issue edit "$ISSUE" --repo "$REPO" \
             --add-label "stage:implementing" --add-label "iteration-1"
-          gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "copilot" || \
-            echo "::warning::Could not auto-assign Copilot coding agent; assign it manually to start iteration 1."
-          gh issue comment "$ISSUE" --repo "$REPO" --body \
-            "Plan approved. Starting **iteration 1/3**: implement -> test -> review. See \`docs/orchestration.md\`."
+
+          if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "copilot"; then
+            gh issue comment "$ISSUE" --repo "$REPO" --body \
+              "Plan approved. Starting **iteration 1/3**: implement -> test -> review. See \`docs/orchestration.md\`."
+          else
+            # Labels say "implementing" but no agent was actually assigned —
+            # make that discrepancy visible rather than leaving it implicit.
+            gh issue edit "$ISSUE" --repo "$REPO" \
+              --remove-label "stage:implementing" --add-label "stage:blocked"
+            gh issue comment "$ISSUE" --repo "$REPO" --body \
+              "Plan approved, but auto-assigning the Copilot coding agent failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
+          fi
 
   handle-review-verdict:
     # Peer review stage -> decides whether to stop or loop again.
@@ -84,7 +94,7 @@ jobs:
             fi
           done
           if [ -z "$found_iteration" ]; then
-            echo "::warning::No iteration-N label found on PR #$PR; defaulting to iteration 1. Check that the orchestrator applied labels correctly."
+            echo "::warning::No iteration-N label found on PR #$PR. If the review requests changes, the loop will stop with stage:blocked rather than guess an iteration number."
           fi
 
           if [ "$REVIEW_STATE" = "approved" ]; then
