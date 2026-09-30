@@ -85,7 +85,10 @@ jobs:
           }
 
           default_branch="$(gh api "repos/$REPO" --jq '.default_branch')"
-          pr_number="$(gh pr list --repo "$REPO" --head "$BRANCH" --state all \
+          # Only reuse an open PR — a closed/merged PR for this branch name
+          # (e.g. an abandoned/superseded prior attempt) can't receive new
+          # commits/reviews, so treat that case the same as "no PR yet".
+          pr_number="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
             --json number --jq '.[0].number // empty')"
 
           if [ -n "$pr_number" ]; then
