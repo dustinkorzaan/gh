@@ -21,6 +21,9 @@ env:
   # Identity assigned to kick off implementation. Centralized here so it can
   # be updated in one place if the coding-agent account name ever changes.
   IMPLEMENTER_ASSIGNEE: copilot
+  # Hard cap on implement/test/review cycles. Centralized so labels.yml's
+  # iteration-1..N labels and the loop logic below stay in sync if changed.
+  MAX_ITERATIONS: 3
 
 jobs:
   release-approved-plan:
@@ -38,6 +41,7 @@ jobs:
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
           ASSIGNEE: ${{ env.IMPLEMENTER_ASSIGNEE }}
+          MAX_ITERATIONS: ${{ env.MAX_ITERATIONS }}
         run: |
           set -euo pipefail
 
@@ -57,7 +61,7 @@ jobs:
 
           if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE"; then
             gh issue comment "$ISSUE" --repo "$REPO" --body \
-              "Plan approved. Starting **iteration 1/3**: implement -> test -> review. See \`docs/orchestration.md\`."
+              "Plan approved. Starting **iteration 1/$MAX_ITERATIONS**: implement -> test -> review. See \`docs/orchestration.md\`."
           else
             # Labels say "implementing" but no agent was actually assigned —
             # make that discrepancy visible rather than leaving it implicit.
@@ -83,14 +87,20 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           REVIEW_STATE: ${{ github.event.review.state }}
           REVIEWER: ${{ github.event.review.user.login }}
+          MAX_ITERATIONS: ${{ env.MAX_ITERATIONS }}
         run: |
           set -euo pipefail
 
           # Reviews drive privileged label transitions (up to
           # stage:ready-for-human), so only act on reviews from someone with
           # at least write access — a read/triage-only reviewer's verdict
-          # must not be able to advance or stop the loop.
-          permission="$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq '.permission')"
+          # must not be able to advance or stop the loop. Fail safe (skip,
+          # don't hard-fail the job) if the permission check itself can't be
+          # made, e.g. due to token scope limits on this endpoint.
+          if ! permission="$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq '.permission' 2>&1)"; then
+            echo "::warning::Could not determine repository permission for '$REVIEWER' ($permission); skipping this review verdict rather than risk acting without authorization."
+            exit 0
+          fi
           case "$permission" in
             write|maintain|admin) ;;
             *)
@@ -105,7 +115,7 @@ jobs:
           found_iteration=""
           current_iteration=1
           iteration_label_count=0
-          for n in 1 2 3; do
+          for ((n = 1; n <= MAX_ITERATIONS; n++)); do
             if grep -qx "iteration-$n" <<<"$CURRENT_LABELS"; then
               found_iteration=1
               current_iteration=$n
@@ -124,7 +134,7 @@ jobs:
               "stage:implementing" "stage:testing" "stage:reviewing"
             gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
             gh pr comment "$PR" --repo "$REPO" --body \
-              "Peer review passed on iteration $current_iteration/3. Loop stopped: **stage:ready-for-human** — ready for final human review."
+              "Peer review passed on iteration $current_iteration/$MAX_ITERATIONS. Loop stopped: **stage:ready-for-human** — ready for final human review."
 
           elif [ "$REVIEW_STATE" = "changes_requested" ]; then
             if [ -z "$found_iteration" ]; then
@@ -135,12 +145,12 @@ jobs:
               gh pr edit "$PR" --repo "$REPO" --add-label "stage:blocked"
               gh pr comment "$PR" --repo "$REPO" --body \
                 "Changes requested, but no \`iteration-N\` label was found on this PR. Loop stopped: **stage:blocked** — needs human triage before continuing."
-            elif [ "$current_iteration" -ge 3 ]; then
+            elif [ "$current_iteration" -ge "$MAX_ITERATIONS" ]; then
               .github/scripts/remove-labels-if-present.sh pr "$PR" \
                 "stage:implementing" "stage:testing" "stage:reviewing"
               gh pr edit "$PR" --repo "$REPO" --add-label "stage:ready-for-human"
               gh pr comment "$PR" --repo "$REPO" --body \
-                "Reached the 3-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** (flagged — needs human triage of outstanding review comments)."
+                "Reached the $MAX_ITERATIONS-iteration cap without a clean peer review. Loop stopped: **stage:ready-for-human** (flagged — needs human triage of outstanding review comments)."
             else
               next=$((current_iteration + 1))
               .github/scripts/remove-labels-if-present.sh pr "$PR" \
@@ -148,6 +158,6 @@ jobs:
               gh pr edit "$PR" --repo "$REPO" \
                 --add-label "iteration-$next" --add-label "stage:implementing"
               gh pr comment "$PR" --repo "$REPO" --body \
-                "Review requested changes on iteration $current_iteration/3. Starting **iteration $next/3**: implement -> test -> review, addressing the open review comments."
+                "Review requested changes on iteration $current_iteration/$MAX_ITERATIONS. Starting **iteration $next/$MAX_ITERATIONS**: implement -> test -> review, addressing the open review comments."
             fi
           fi

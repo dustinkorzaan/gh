@@ -23,6 +23,12 @@ jobs:
     # every unrelated label change: `labeled` events only reach this far when
     # the label just added is 'area:ui' (see the job condition below), all
     # other labeled events (stage:*, iteration-*, etc.) no-op here.
+    # Safe on opened/synchronize/reopened: github.event.label is only
+    # populated for 'labeled' events, and GitHub Actions expressions
+    # evaluate missing/undefined context properties as null rather than
+    # erroring, so `github.event.label.name` is simply null there and the
+    # left side of the `||` (action != 'labeled') already short-circuits
+    # to true before it's needed.
     if: >-
       contains(github.event.pull_request.labels.*.name, 'area:ui') &&
       (github.event.action != 'labeled' || github.event.label.name == 'area:ui')
