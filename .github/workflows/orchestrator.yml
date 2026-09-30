@@ -31,8 +31,17 @@ jobs:
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
+          set -euo pipefail
+
+          labels="$(gh issue view "$ISSUE" --repo "$REPO" --json labels --jq '.labels[].name')"
+
+          for label in "stage:interview" "stage:planned"; do
+            if grep -qx "$label" <<<"$labels"; then
+              gh issue edit "$ISSUE" --repo "$REPO" --remove-label "$label"
+            fi
+          done
+
           gh issue edit "$ISSUE" --repo "$REPO" \
-            --remove-label "stage:interview" --remove-label "stage:planned" \
             --add-label "stage:implementing" --add-label "iteration-1"
           gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "copilot" || \
             echo "::warning::Could not auto-assign Copilot coding agent; assign it manually to start iteration 1."
@@ -87,7 +96,15 @@ jobs:
               "Peer review passed on iteration $current_iteration/3. Loop stopped: **stage:ready-for-human** — ready for final human review."
 
           elif [ "$REVIEW_STATE" = "changes_requested" ]; then
-            if [ "$current_iteration" -ge 3 ]; then
+            if [ -z "$found_iteration" ]; then
+              # Can't safely determine which iteration we're on; stop rather
+              # than risk looping indefinitely or mislabeling progress.
+              remove_label_if_present "stage:implementing"
+              remove_label_if_present "stage:testing"
+              gh pr edit "$PR" --repo "$REPO" --add-label "stage:blocked"
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Changes requested, but no \`iteration-N\` label was found on this PR. Loop stopped: **stage:blocked** — needs human triage before continuing."
+            elif [ "$current_iteration" -ge 3 ]; then
               remove_label_if_present "stage:implementing"
               remove_label_if_present "stage:testing"
               remove_label_if_present "stage:reviewing"

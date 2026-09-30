@@ -105,6 +105,11 @@ In both cases the PR ends up labeled `stage:ready-for-human` — the only
 state a human needs to watch for. **The orchestrator never merges a PR**;
 final approval and merge are always a human action.
 
+If the orchestrator receives a `changes_requested` review but can't find an
+`iteration-N` label on the PR (state got out of sync), it stops immediately
+and labels the PR `stage:blocked` instead of guessing an iteration number —
+this needs human triage before the loop can safely continue.
+
 ### Manual override
 
 Add the `stage:paused` label to a PR or issue at any time to halt the

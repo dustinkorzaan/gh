@@ -3,6 +3,12 @@ name: E2E - Playwright (UI stories only)
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+    # Trigger on either path so the workflow actually runs and can evaluate
+    # the area:ui label check below — a full-stack story labeled area:ui
+    # may only touch api/** in a given commit (e.g. a contract change),
+    # and the E2E suite should still cover that. The job itself is the
+    # real gate: it skips unless area:ui is present, regardless of which
+    # paths changed.
     paths:
       - "ui/**"
       - "api/**"
