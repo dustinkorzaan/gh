@@ -35,6 +35,12 @@ jobs:
       github.event_name == 'issues' && github.event.label.name == 'approved-plan' &&
       !contains(github.event.issue.labels.*.name, 'stage:paused')
     runs-on: ubuntu-latest
+    # Serialize runs per issue: the branch/PR existence checks below are
+    # check-then-act, so two concurrent runs for the same issue (e.g. a
+    # duplicate/retried label event) could otherwise both pass the "doesn't
+    # exist yet" check and create duplicate branches/PRs.
+    concurrency:
+      group: release-approved-plan-${{ github.event.issue.number }}
     # Creating the git ref/commit for the working branch needs contents:
     # write, on top of the workflow-level issues/pull-requests permissions.
     permissions:
@@ -125,7 +131,7 @@ jobs:
             --add-label "stage:implementing" --add-label "iteration-1"
           while IFS= read -r label; do
             [ -n "$label" ] && gh pr edit "$pr_number" --repo "$REPO" --add-label "$label"
-          done < <(grep -x 'area:[a-z]*' <<<"$CURRENT_LABELS" || true)
+          done < <(grep -x 'area:[a-z0-9-]*' <<<"$CURRENT_LABELS" || true)
 
           if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE"; then
             gh issue comment "$ISSUE" --repo "$REPO" --body \
