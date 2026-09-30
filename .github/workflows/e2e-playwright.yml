@@ -18,9 +18,14 @@ permissions:
 
 jobs:
   e2e:
-    # Only run for stories flagged as touching the UI. This keeps
-    # api-only iterations fast, per docs/orchestration.md.
-    if: contains(github.event.pull_request.labels.*.name, 'area:ui')
+    # Only run for stories flagged as touching the UI. This keeps api-only
+    # iterations fast, per docs/orchestration.md. Also avoids re-running on
+    # every unrelated label change: `labeled` events only reach this far when
+    # the label just added is 'area:ui' (see the job condition below), all
+    # other labeled events (stage:*, iteration-*, etc.) no-op here.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'area:ui') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'area:ui')
     runs-on: ubuntu-latest
     defaults:
       run:

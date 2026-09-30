@@ -17,6 +17,11 @@ permissions:
   issues: write
   pull-requests: write
 
+env:
+  # Identity assigned to kick off implementation. Centralized here so it can
+  # be updated in one place if the coding-agent account name ever changes.
+  IMPLEMENTER_ASSIGNEE: copilot
+
 jobs:
   release-approved-plan:
     # Plan interview & approval gate -> kicks off iteration 1.
@@ -30,12 +35,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
+          ASSIGNEE: ${{ env.IMPLEMENTER_ASSIGNEE }}
         run: |
           set -euo pipefail
 
           labels="$(gh issue view "$ISSUE" --repo "$REPO" --json labels --jq '.labels[].name')"
           # Note: if the issue has no labels, $labels is empty and every
-          # grep below simply won't match — safe by design.
+          # grep below simply won't match — safe by design. `set -e` also
+          # means a failed `gh issue view` call aborts this step rather than
+          # silently proceeding as if there were no labels.
 
           for label in "stage:interview" "stage:planned"; do
             if grep -qx "$label" <<<"$labels"; then
@@ -46,7 +54,7 @@ jobs:
           gh issue edit "$ISSUE" --repo "$REPO" \
             --add-label "stage:implementing" --add-label "iteration-1"
 
-          if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "copilot"; then
+          if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE"; then
             gh issue comment "$ISSUE" --repo "$REPO" --body \
               "Plan approved. Starting **iteration 1/3**: implement -> test -> review. See \`docs/orchestration.md\`."
           else
@@ -55,7 +63,7 @@ jobs:
             gh issue edit "$ISSUE" --repo "$REPO" \
               --remove-label "stage:implementing" --add-label "stage:blocked"
             gh issue comment "$ISSUE" --repo "$REPO" --body \
-              "Plan approved, but auto-assigning the Copilot coding agent failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
+              "Plan approved, but auto-assigning \`$ASSIGNEE\` failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
           fi
 
   handle-review-verdict:
@@ -87,14 +95,19 @@ jobs:
 
           found_iteration=""
           current_iteration=1
+          iteration_label_count=0
           for n in 1 2 3; do
             if grep -qx "iteration-$n" <<<"$labels"; then
               found_iteration=1
               current_iteration=$n
+              iteration_label_count=$((iteration_label_count + 1))
             fi
           done
           if [ -z "$found_iteration" ]; then
             echo "::warning::No iteration-N label found on PR #$PR. If the review requests changes, the loop will stop with stage:blocked rather than guess an iteration number."
+          elif [ "$iteration_label_count" -gt 1 ]; then
+            echo "::warning::Multiple iteration-N labels found on PR #$PR; labels should be mutually exclusive. Treating this as ambiguous state."
+            found_iteration=""
           fi
 
           if [ "$REVIEW_STATE" = "approved" ]; then

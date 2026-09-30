@@ -108,7 +108,8 @@ state a human needs to watch for. **The orchestrator never merges a PR**;
 final approval and merge are always a human action.
 
 If the orchestrator receives a `changes_requested` review but can't find an
-`iteration-N` label on the PR (state got out of sync), it stops immediately
+`iteration-N` label on the PR, or finds more than one (labels are supposed
+to be mutually exclusive, but nothing prevents drift), it stops immediately
 and labels the PR `stage:blocked` instead of guessing an iteration number —
 this needs human triage before the loop can safely continue.
 
