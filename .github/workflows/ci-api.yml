@@ -17,16 +17,16 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
     steps:
       - uses: actions/checkout@v4
 
       - name: Check api/ exists
         id: check
         run: |
-          if compgen -G "*.sln" > /dev/null || compgen -G "**/*.csproj" > /dev/null; then
+          shopt -s globstar nullglob
+          sln_files=(api/*.sln)
+          csproj_files=(api/**/*.csproj)
+          if [ "${#sln_files[@]}" -gt 0 ] || [ "${#csproj_files[@]}" -gt 0 ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -40,12 +40,20 @@ jobs:
 
       - name: Restore
         if: steps.check.outputs.exists == 'true'
+        working-directory: api
         run: dotnet restore
 
       - name: Build
         if: steps.check.outputs.exists == 'true'
+        working-directory: api
         run: dotnet build --no-restore --configuration Release
 
       - name: Test
         if: steps.check.outputs.exists == 'true'
+        working-directory: api
+        # No --if-present equivalent for dotnet: if a project exists but
+        # defines no tests, this should fail loudly rather than silently
+        # report green, because the orchestrator's CI gate treats job
+        # success as "green CI" — a project with zero test coverage must
+        # not be indistinguishable from "tests passed".
         run: dotnet test --no-build --configuration Release

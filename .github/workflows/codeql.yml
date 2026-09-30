@@ -14,25 +14,65 @@ permissions:
   actions: read
 
 jobs:
-  analyze:
-    name: Analyze (${{ matrix.language }})
+  detect:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - language: javascript-typescript
-            build-mode: none
-          - language: csharp
-            build-mode: autobuild
+    outputs:
+      has_ui: ${{ steps.detect.outputs.has_ui }}
+      has_api: ${{ steps.detect.outputs.has_api }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        run: |
+          shopt -s globstar nullglob
+          if [ -f ui/package.json ]; then
+            echo "has_ui=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_ui=false" >> "$GITHUB_OUTPUT"
+          fi
+          sln_files=(api/*.sln)
+          csproj_files=(api/**/*.csproj)
+          if [ "${#sln_files[@]}" -gt 0 ] || [ "${#csproj_files[@]}" -gt 0 ]; then
+            echo "has_api=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_api=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  analyze-ui:
+    name: Analyze (javascript-typescript)
+    needs: detect
+    # Skip entirely when /ui isn't present yet — codeql-action/init fails
+    # outright if it finds no source for the configured language, which
+    # would otherwise block the orchestrator's green-CI gate for an
+    # api-only story with no /ui tree yet.
+    if: needs.detect.outputs.has_ui == 'true'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: github/codeql-action/init@v3
         with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
+          languages: javascript-typescript
+          build-mode: none
 
       - uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:${{ matrix.language }}"
+          category: "/language:javascript-typescript"
+
+  analyze-api:
+    name: Analyze (csharp)
+    needs: detect
+    # Skip entirely when /api isn't present yet — same reasoning as
+    # analyze-ui above, mirrored for a ui-only story with no /api tree yet.
+    if: needs.detect.outputs.has_api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          build-mode: autobuild
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"

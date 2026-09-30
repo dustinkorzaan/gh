@@ -58,8 +58,29 @@ jobs:
           ASSIGNEE: ${{ env.IMPLEMENTER_ASSIGNEE }}
           MAX_ITERATIONS: ${{ env.MAX_ITERATIONS }}
           BRANCH: ${{ env.WORK_BRANCH_PREFIX }}/${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
+
+          # Branch protection can't restrict who applies an issue label, so
+          # this privileged automation (branch/PR creation + assignment)
+          # must not trust the label alone — only proceed if the actor who
+          # applied `approved-plan` has at least maintain access. Fail
+          # closed (skip, don't hard-fail) if the permission check itself
+          # can't be made.
+          permission_err=""
+          if ! actor_permission="$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq '.permission' 2>/tmp/actor_permission_err)"; then
+            permission_err="$(cat /tmp/actor_permission_err)"
+            echo "::warning::Could not determine repository permission for '$ACTOR' ($permission_err); skipping rather than risk acting without authorization."
+            exit 0
+          fi
+          case "$actor_permission" in
+            maintain|admin) ;;
+            *)
+              echo "::notice::Ignoring 'approved-plan' label added by '$ACTOR' (permission: $actor_permission) — insufficient access to release the plan into the orchestrator."
+              exit 0
+              ;;
+          esac
 
           CURRENT_LABELS="$(gh issue view "$ISSUE" --repo "$REPO" --json labels --jq '.labels[].name')"
           export CURRENT_LABELS
@@ -68,6 +89,15 @@ jobs:
           # safe by design. `set -e` also means a failed `gh issue view`
           # call aborts this step rather than silently proceeding as if
           # there were no labels.
+
+          # If an iteration-N label is already present, this issue has
+          # already been released once — removing and re-adding
+          # `approved-plan` must not reset back to iteration-1 next to
+          # whatever iteration is actually in progress.
+          if grep -qE '^iteration-[0-9]+$' <<<"$CURRENT_LABELS"; then
+            echo "::notice::Issue #$ISSUE already has an iteration-N label; 'approved-plan' was likely re-applied. Skipping re-release to avoid resetting iteration state."
+            exit 0
+          fi
 
           .github/scripts/remove-labels-if-present.sh issue "$ISSUE" \
             "stage:interview" "stage:planned"
@@ -106,12 +136,12 @@ jobs:
               if ! new_commit="$(gh api "repos/$REPO/git/commits" \
                   -f message="Start implementation for #$ISSUE" \
                   -f tree="$base_tree" -f "parents[]=$base_sha" --jq '.sha')"; then
-                block_issue "Plan approved, but creating the working branch failed (could not create the initial commit). Loop stopped: **stage:blocked** — create the branch/PR manually, then re-apply \`stage:implementing\` to resume."
+                block_issue "Plan approved, but creating the working branch failed (could not create the initial commit). Loop stopped: **stage:blocked** — create the branch/PR manually, then manually remove \`stage:blocked\` and add \`stage:implementing\` once done — no workflow re-triggers automatically on those label changes."
                 exit 1
               fi
               if ! gh api "repos/$REPO/git/refs" \
                   -f ref="refs/heads/$BRANCH" -f sha="$new_commit" >/dev/null; then
-                block_issue "Plan approved, but creating the working branch '$BRANCH' failed. Loop stopped: **stage:blocked** — create the branch/PR manually, then re-apply \`stage:implementing\` to resume."
+                block_issue "Plan approved, but creating the working branch '$BRANCH' failed. Loop stopped: **stage:blocked** — create the branch/PR manually, then manually remove \`stage:blocked\` and add \`stage:implementing\` once done — no workflow re-triggers automatically on those label changes."
                 exit 1
               fi
             fi
@@ -121,7 +151,7 @@ jobs:
 
             if ! pr_url="$(gh pr create --repo "$REPO" --base "$default_branch" --head "$BRANCH" \
                 --draft --title "$issue_title (#$ISSUE)" --body "$pr_body")"; then
-              block_issue "Plan approved, and branch \`$BRANCH\` was created, but opening the draft PR failed. Loop stopped: **stage:blocked** — open the PR manually from that branch, then re-apply \`stage:implementing\` to resume."
+              block_issue "Plan approved, and branch \`$BRANCH\` was created, but opening the draft PR failed. Loop stopped: **stage:blocked** — open the PR manually from that branch, then manually remove \`stage:blocked\` and add \`stage:implementing\` once done — no workflow re-triggers automatically on those label changes."
               exit 1
             fi
             pr_number="${pr_url##*/}"
@@ -136,7 +166,14 @@ jobs:
             [ -n "$label" ] && gh pr edit "$pr_number" --repo "$REPO" --add-label "$label"
           done < <(grep -x 'area:[a-z0-9-]*' <<<"$CURRENT_LABELS" || true)
 
-          if gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE"; then
+          # The issues API silently ignores an assignee login it can't add
+          # (e.g. GITHUB_TOKEN lacking the scope to assign the coding-agent
+          # bot) — it does not error, so `gh issue edit ... --add-assignee`
+          # succeeding is not proof anyone was actually assigned. Verify by
+          # re-reading the assignee list afterwards.
+          gh issue edit "$ISSUE" --repo "$REPO" --add-assignee "$ASSIGNEE" || true
+          actual_assignees="$(gh issue view "$ISSUE" --repo "$REPO" --json assignees --jq '.assignees[].login')"
+          if grep -qxi "$ASSIGNEE" <<<"$actual_assignees"; then
             gh issue comment "$ISSUE" --repo "$REPO" --body \
               "Plan approved. Opened draft PR #$pr_number on branch \`$BRANCH\` and started **iteration 1/$MAX_ITERATIONS**: implement -> test -> review. See \`docs/orchestration.md\`."
             gh pr comment "$pr_number" --repo "$REPO" --body \
@@ -144,9 +181,13 @@ jobs:
           else
             # Labels say "implementing" but no agent was actually assigned —
             # make that discrepancy visible rather than leaving it implicit.
+            # Note: starting the Copilot coding agent on a pre-created
+            # branch requires assigning it via a PAT with the
+            # `agent_assignment` payload (base_branch/custom_instructions) —
+            # GITHUB_TOKEN cannot do this (see docs/orchestration.md).
             gh pr edit "$pr_number" --repo "$REPO" \
               --remove-label "stage:implementing" --add-label "stage:blocked"
-            block_issue "Plan approved and draft PR #$pr_number opened, but auto-assigning \`$ASSIGNEE\` failed. Loop stopped: **stage:blocked** — assign an implementer manually, then re-apply \`stage:implementing\` to resume."
+            block_issue "Plan approved and draft PR #$pr_number opened, but auto-assigning \`$ASSIGNEE\` did not take effect (the issues API silently ignores assignees it can't add — this commonly means \`GITHUB_TOKEN\` lacks permission to assign the coding agent; see \`docs/orchestration.md\`). Loop stopped: **stage:blocked** — assign an implementer manually, then manually remove \`stage:blocked\` and add \`stage:implementing\` once done — no workflow re-triggers automatically on those label changes."
             exit 1
           fi
 
@@ -163,7 +204,15 @@ jobs:
     concurrency:
       group: handle-review-verdict-${{ github.event.pull_request.number }}
     steps:
+      # Pin the checkout to the default branch rather than the implicit
+      # ref for this event (pull_request_review defaults to the PR head
+      # SHA). This step runs .github/scripts/remove-labels-if-present.sh
+      # with issues/pull-requests: write, so it must always execute the
+      # copy of that script trusted on the default branch, never whatever
+      # a PR head happens to contain.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Advance or stop the loop based on the review verdict
         env:
@@ -216,12 +265,25 @@ jobs:
           fi
 
           if [ "$REVIEW_STATE" = "approved" ]; then
+            if [ -z "$found_iteration" ]; then
+              # No (unambiguous) iteration-N label — this PR isn't in a
+              # state the orchestrator recognizes as "being orchestrated",
+              # so don't let an approval move it to stage:ready-for-human;
+              # that label is supposed to mean the loop actually ran.
+              echo "::notice::Ignoring 'approved' review on PR #$PR — no unambiguous iteration-N label present, so this PR isn't being tracked by the orchestrator loop."
+              exit 0
+            fi
+
             # "Approved" alone isn't a stop condition — docs/orchestration.md
             # requires review pass AND green CI. Check the PR's status/check
-            # rollup before treating this as done.
+            # rollup before treating this as done. Exclude this orchestrator
+            # workflow's own check run: it is itself still "in progress" for
+            # this exact commit while this step runs, which would otherwise
+            # make the rollup perpetually PENDING and this branch
+            # unreachable.
             # shellcheck disable=SC2016 # jq's own $c syntax, not a shell var.
             ci_state="$(gh pr view "$PR" --repo "$REPO" --json statusCheckRollup \
-              --jq '[.statusCheckRollup[].conclusion] as $c | if ($c|length)==0 then "PENDING" elif ($c | any(. == "FAILURE" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) then "FAILURE" elif ($c | any(. == null)) then "PENDING" else "SUCCESS" end')"
+              --jq '[.statusCheckRollup[] | select(.name // .context | startswith("Orchestrator - loop control") | not) | .conclusion] as $c | if ($c|length)==0 then "PENDING" elif ($c | any(. == "FAILURE" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) then "FAILURE" elif ($c | any(. == null)) then "PENDING" else "SUCCESS" end')"
 
             if [ "$ci_state" = "SUCCESS" ]; then
               .github/scripts/remove-labels-if-present.sh pr "$PR" \

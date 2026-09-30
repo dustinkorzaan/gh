@@ -33,16 +33,13 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'area:ui') &&
       (github.event.action != 'labeled' || github.event.label.name == 'area:ui')
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
     steps:
       - uses: actions/checkout@v4
 
       - name: Check for Playwright config
         id: check
         run: |
-          if [ -f package.json ] && { [ -f playwright.config.ts ] || [ -f playwright.config.js ]; }; then
+          if [ -f ui/package.json ] && { [ -f ui/playwright.config.ts ] || [ -f ui/playwright.config.js ]; }; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -58,14 +55,17 @@ jobs:
 
       - name: Install dependencies
         if: steps.check.outputs.exists == 'true'
+        working-directory: ui
         run: npm ci
 
       - name: Install Playwright browsers
         if: steps.check.outputs.exists == 'true'
+        working-directory: ui
         run: npx playwright install --with-deps
 
       - name: Run E2E tests
         if: steps.check.outputs.exists == 'true'
+        working-directory: ui
         # App must be started against a test Entra ID tenant / test API
         # per docs/orchestration.md before this step runs in a real setup.
         run: npx playwright test

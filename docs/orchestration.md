@@ -38,8 +38,21 @@ below.
 - A human reviews the plan and adds the `approved-plan` label. **Nothing is
   implemented before this label is present.**
 - `.github/workflows/orchestrator.yml` (`release-approved-plan` job) reacts
-  to that label and does all of the following automatically — no manual
-  branch or PR creation is required:
+  to that label — but only if the user who applied it has at least
+  `maintain` repository permission (checked via `gh api
+  repos/{owner}/{repo}/collaborators/{user}/permission` against
+  `github.actor`). Branch protection can't restrict who is allowed to apply
+  an issue label, so this check is what actually enforces "only a
+  maintainer can release a plan into the loop" — a label alone isn't
+  sufficient authorization for privileged automation (branch/PR creation,
+  agent assignment). If the permission check itself fails, the job skips
+  rather than risk acting without authorization.
+- It also skips if the issue already has an `iteration-N` label — that
+  means this issue was already released once, and `approved-plan` being
+  removed and re-applied (e.g. by mistake) must not reset iteration state
+  back to `iteration-1` next to whatever iteration is actually in progress.
+- Otherwise, it does all of the following automatically — no manual branch
+  or PR creation is required:
   1. Removes `stage:interview`/`stage:planned` and adds
      `stage:implementing` + `iteration-1` on the issue.
   2. Creates a working branch named `story/<issue-number>` off the
@@ -58,14 +71,35 @@ below.
      PR (not the issue) is what carries the pipeline state through
      implement/test/review.
   5. Assigns the issue to the Copilot coding agent to start work on that
-     branch.
-  - If branch creation, PR creation, or assignment fails at any point, it
-    backs out `stage:implementing` and applies `stage:blocked` instead — the
-    label state never claims progress that didn't actually happen.
-  - **Caveat:** if your Copilot coding agent is configured to open its own
-    PR automatically upon issue assignment, that can produce a second PR
-    alongside the one this workflow creates. Disable that auto-PR behavior
-    (or point the agent at the pre-created branch) to avoid duplicates.
+     branch, then **verifies the assignment actually took effect** by
+     re-reading the issue's assignee list — the GitHub issues API silently
+     ignores an assignee login it can't add (e.g. because `GITHUB_TOKEN`
+     lacks the scope to assign the coding-agent bot), so a successful `gh`
+     exit code alone is not proof anyone was actually assigned.
+  - If branch creation, PR creation, or assignment fails/doesn't take
+    effect at any point, it backs out `stage:implementing` and applies
+    `stage:blocked` instead — the label state never claims progress that
+    didn't actually happen. **Recovering from `stage:blocked` is a fully
+    manual step**: fix the underlying problem (create the branch/PR/
+    assignment by hand), then manually remove `stage:blocked` and add
+    `stage:implementing` yourself — no workflow listens for those label
+    changes to auto-resume the loop.
+  - **Caveat on assignment:** starting the actual Copilot coding agent on a
+    pre-created branch is not guaranteed to work via `gh issue edit
+    --add-assignee` with the default `GITHUB_TOKEN`. Reliably invoking the
+    coding agent on a specific branch with plan context requires assigning
+    it via a PAT-scoped `POST /repos/{owner}/{repo}/issues/{n}/assignees`
+    call carrying an `agent_assignment` payload (`base_branch`,
+    `custom_instructions` seeded from the approved plan) — this needs a
+    dedicated PAT secret, which is not yet configured in this repo. Treat
+    the current assignment step as best-effort until that PAT is added;
+    `stage:blocked` is the expected outcome until then unless a maintainer
+    is also manually assigning/running the coding agent out of band.
+  - **Caveat on PR creation:** if your Copilot coding agent is configured
+    to open its own PR automatically upon issue assignment, that can
+    produce a second PR alongside the one this workflow creates. Disable
+    that auto-PR behavior (or point the agent at the pre-created branch) to
+    avoid duplicates.
 
 ### 2. Implement / execute
 
@@ -93,7 +127,11 @@ below.
 - `.github/workflows/ci-api.yml` — path-filtered on `api/**`, runs
   `dotnet restore && dotnet build && dotnet test`.
 - `.github/workflows/codeql.yml` — CodeQL analysis for
-  `javascript-typescript` and `csharp`.
+  `javascript-typescript` and `csharp`, each as its own job that only runs
+  when that stack is actually present in the repo (`ui/package.json` /
+  `api/*.sln`|`*.csproj`) — `codeql-action/init` fails outright if it finds
+  no source for the configured language, which would otherwise block the
+  green-CI gate for e.g. a UI-only story with no `/api` tree yet.
 - `.github/workflows/e2e-playwright.yml` — runs **only** on PRs labeled
   `area:ui`, using the **Playwright MCP server** (or `npx playwright test`
   in CI) to exercise the running app end-to-end, including the
@@ -118,7 +156,11 @@ below.
     patterns, and that blob access only ever issues SAS URIs — no binary
     proxying through API endpoints.
 - `.github/workflows/orchestrator.yml` (`handle-review-verdict` job) reacts
-  to the submitted review:
+  to the submitted review. It checks out the repository's **default branch**
+  rather than the implicit ref for a `pull_request_review` event (which
+  defaults to the PR head) before running any repo scripts, so a PR can
+  never smuggle in a modified copy of `.github/scripts/remove-labels-if-present.sh`
+  and have it run with this job's `issues`/`pull-requests: write` permissions.
   - It first checks the reviewer's repository permission via `gh api
     repos/{owner}/{repo}/collaborators/{user}/permission` and ignores the
     review entirely unless it's at least `write` — a read/triage-only
@@ -126,11 +168,18 @@ below.
     transitions. If the permission check itself can't be made (e.g. token
     scope limits), it fails safe: skip the verdict rather than act without
     authorization.
-  - `approved` → checks the PR's status-check rollup (`gh pr view --json
-    statusCheckRollup`); only if CI is actually green does it label the PR
-    `stage:ready-for-human` and **stop the loop**. If CI is still pending or
-    failing, it leaves the PR in `stage:reviewing` and comments that the
-    review passed but CI must complete before the loop can stop.
+  - `approved` → first requires an unambiguous `iteration-N` label on the
+    PR (skips otherwise — an approval on a PR the orchestrator isn't
+    tracking must not move it to `stage:ready-for-human`), then checks the
+    PR's status-check rollup (`gh pr view --json statusCheckRollup`),
+    **excluding this orchestrator workflow's own check run** from that
+    rollup (it is itself still "in progress" for the exact commit being
+    evaluated, which would otherwise make the rollup perpetually `PENDING`
+    and this branch unreachable). Only if the remaining checks are
+    actually green does it label the PR `stage:ready-for-human` and **stop
+    the loop**. If CI is still pending or failing, it leaves the PR in
+    `stage:reviewing` and comments that the review passed but CI must
+    complete before the loop can stop.
   - `changes_requested` → increments the iteration label (`iteration-1` ->
     `iteration-2` -> `iteration-3`) and loops back to Implement, unless the
     cap has already been reached.
@@ -162,12 +211,18 @@ orchestrator; it must take no action while that label is present.
 ### Securing the approval gate
 
 Applying the `approved-plan` label directly triggers privileged automation
-(assigning the Copilot coding agent, starting iteration 1). Restrict who can
-apply it — e.g. via a ruleset/branch-protection rule limiting label
-management to maintainers, or a required-reviewers rule on the story issue —
-so the gate can't be bypassed by an arbitrary contributor.
+(branch/PR creation, assigning the Copilot coding agent, starting
+iteration 1). Since branch protection can't restrict who is allowed to
+apply an issue label, `release-approved-plan` enforces this itself: it
+checks `github.actor`'s repository permission and only proceeds for
+`maintain`/`admin` — a `triage`/`write`-level contributor applying the
+label has no effect. If you need a different permission bar, adjust the
+`case` statement in that job.
 
 ## Label reference
 
-See `.github/labels.yml` (kept in sync by `.github/workflows/label-sync.yml`)
-for the full set of `stage:*`, `iteration-*`, and `area:*` labels used above.
+See `.github/labels.yml` (kept in sync by `.github/workflows/label-sync.yml`,
+which pins `micnncim/action-label-syncer` to a commit SHA and sets
+`prune: false` so syncing the manifest never deletes unrelated repo labels
+like `bug`/`enhancement`) for the full set of `stage:*`, `iteration-*`, and
+`area:*` labels used above.
