@@ -42,8 +42,7 @@ jobs:
     needs: detect
     # Skip entirely when /ui isn't present yet — codeql-action/init fails
     # outright if it finds no source for the configured language, which
-    # would otherwise block the orchestrator's green-CI gate for an
-    # api-only story with no /ui tree yet.
+    # would otherwise fail CI for an api-only repo with no /ui tree yet.
     if: needs.detect.outputs.has_ui == 'true'
     runs-on: ubuntu-latest
     steps:

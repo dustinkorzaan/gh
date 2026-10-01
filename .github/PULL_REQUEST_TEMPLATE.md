@@ -1,37 +1,36 @@
 <!--
-  Auto-generated/updated by the orchestrator workflow as the implement /
-  test / review loop progresses. See docs/orchestration.md for the full
-  pipeline description. Humans: the only action required from you is the
-  final review once `stage:ready-for-human` is applied.
+  Story PRs: the `ship` agent fills this in. It starts the description with
+  "✅ Ready for human review" or "⚠️ Needs triage" when it hands over.
 -->
 
-## Story
+## Summary
+
+<!-- What changed and why, in 2-4 sentences. -->
 
 Closes #<!-- issue number -->
 
-## Pipeline status
+## Spec
 
-- [ ] Plan approved (`approved-plan` label present on the story issue)
-- [ ] Iteration 1: implement → test → review
-- [ ] Iteration 2: implement → test → review (only if iteration 1 review failed)
-- [ ] Iteration 3: implement → test → review (only if iteration 2 review failed)
-- [ ] Ready for final human review (`stage:ready-for-human`)
+<!-- docs/specs/<issue>-<slug>.md, or "n/a" for trivial changes -->
 
-## Test & verify results (latest iteration)
+## Acceptance criteria → evidence
 
-| Check | Status |
-| --- | --- |
-| UI CI (`ci-ui.yml`) | |
-| API CI (`ci-api.yml`) | |
-| CodeQL | |
-| Playwright E2E (if `area:ui`) | |
-| Automated code review (`parallel_validation`) | |
-| Peer review agent | |
+| # | Criterion | Evidence (test / check) |
+|---|---|---|
+| AC1 |  |  |
 
-## Notes for the human reviewer
+## Verify
 
-This PR stopped automated iteration because either:
-- peer review passed and CI is green, or
-- the 3-iteration cap was reached without a clean pass.
+<!-- The scripts/verify.sh --all summary. -->
 
-See the `stage:*` / `iteration-*` labels and the comment history for details.
+## Areas touched
+
+<!-- ui, api, infra, workflows, docs -->
+
+## Config / infra changes
+
+<!-- New env vars, settings, Bicep, workflow changes, or "none". -->
+
+## Review notes and follow-ups
+
+<!-- Assumptions, open issues, known gaps, follow-up work. -->

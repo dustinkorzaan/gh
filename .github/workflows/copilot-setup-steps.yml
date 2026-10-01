@@ -1,0 +1,48 @@
+name: Copilot setup steps
+
+# Prepares the Copilot cloud agent's environment before each session, so
+# scripts/verify.sh can run the same checks as CI. The job name must be
+# exactly `copilot-setup-steps`. Running this workflow on its own (manually or
+# when it changes) checks that the setup still works.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same versions as ci-ui.yml / ci-api.yml.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install UI dependencies
+        if: hashFiles('ui/package-lock.json') != ''
+        working-directory: ui
+        run: npm ci
+
+      - name: Install Playwright browsers
+        if: hashFiles('ui/playwright.config.ts', 'ui/playwright.config.js') != ''
+        working-directory: ui
+        run: npx playwright install --with-deps
+
+      - name: Restore API dependencies
+        if: hashFiles('api/**/*.csproj') != ''
+        working-directory: api
+        run: dotnet restore

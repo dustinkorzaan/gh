@@ -1,37 +1,19 @@
-name: E2E - Playwright (UI stories only)
+name: E2E - Playwright
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    # Trigger on either path so the workflow actually runs and can evaluate
-    # the area:ui label check below — a full-stack story labeled area:ui
-    # may only touch api/** in a given commit (e.g. a contract change),
-    # and the E2E suite should still cover that. The job itself is the
-    # real gate: it skips unless area:ui is present, regardless of which
-    # paths changed.
+    # An API contract change can break the UI, so api/** changes run the
+    # suite too. The job skips while ui/ doesn't exist yet.
     paths:
       - "ui/**"
       - "api/**"
+      - ".github/workflows/e2e-playwright.yml"
 
 permissions:
   contents: read
 
 jobs:
   e2e:
-    # Only run for stories flagged as touching the UI. This keeps api-only
-    # iterations fast, per docs/orchestration.md. Also avoids re-running on
-    # every unrelated label change: `labeled` events only reach this far when
-    # the label just added is 'area:ui' (see the job condition below), all
-    # other labeled events (stage:*, iteration-*, etc.) no-op here.
-    # Safe on opened/synchronize/reopened: github.event.label is only
-    # populated for 'labeled' events, and GitHub Actions expressions
-    # evaluate missing/undefined context properties as null rather than
-    # erroring, so `github.event.label.name` is simply null there and the
-    # left side of the `||` (action != 'labeled') already short-circuits
-    # to true before it's needed.
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'area:ui') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'area:ui')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,20 +21,17 @@ jobs:
       - name: Check for Playwright config
         id: check
         run: |
-          # Skipping is only correct while ui/ doesn't exist yet (the UI
-          # story hasn't started implementation). Once ui/package.json
-          # exists on an area:ui PR, a missing Playwright config must fail
-          # the job rather than silently skip — this is the only check
-          # that actually proves the cross-stack UI<->API<->Blob contract,
-          # per docs/orchestration.md, so treating "no E2E suite" as green
-          # CI would defeat the point of gating on area:ui.
+          # Skipping is only correct while ui/ doesn't exist yet. Once
+          # ui/package.json exists, a missing Playwright config fails the
+          # job rather than silently skipping: this is the only check that
+          # proves the cross-stack UI<->API<->Blob contract (see REVIEW.md).
           if [ ! -f ui/package.json ]; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "::notice::ui/package.json not found yet; skipping E2E."
           elif [ -f ui/playwright.config.ts ] || [ -f ui/playwright.config.js ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::ui/package.json exists but no playwright.config.ts|js was found. A story labeled area:ui must have a runnable Playwright E2E suite before CI can be green." >&2
+            echo "::error::ui/package.json exists but no playwright.config.ts|js was found. The UI must have a runnable Playwright E2E suite before CI can be green." >&2
             exit 1
           fi
 
@@ -76,8 +55,8 @@ jobs:
       - name: Run E2E tests
         if: steps.check.outputs.exists == 'true'
         working-directory: ui
-        # App must be started against a test Entra ID tenant / test API
-        # per docs/orchestration.md before this step runs in a real setup.
+        # The Playwright config's webServer must start the app against a
+        # test Entra ID tenant / test API before this step runs.
         run: npx playwright test
 
       - name: Upload Playwright report
