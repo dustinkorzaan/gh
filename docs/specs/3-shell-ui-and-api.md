@@ -53,7 +53,7 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 ## Plan
 
 - [x] 1. Add the .NET 10 API and xUnit acceptance tests: `api/gh-api/`, `api/gh-api.tests/`, and any solution/configuration files under `api/`. Expose the hello endpoint and verify its HTTP response with `scripts/verify.sh api`.
-- [ ] 2. Add the Vite/React/Redux Toolkit UI and its acceptance test: `ui/` and `ui/src/`. Fetch the API response and render loading, success, and error states; verify with `scripts/verify.sh ui`.
+- [x] 2. Add the Vite/React/Redux Toolkit UI and its acceptance test: `ui/` and `ui/src/`. Fetch the API response and render loading, success, and error states; verify with `scripts/verify.sh ui`.
 - [ ] 3. Add the Playwright config and cross-stack acceptance test: `ui/playwright.config.ts` and `ui/e2e/`. Start the API and UI for the test and verify that the UI renders the live API greeting with `scripts/verify.sh ui`.
 - [ ] 4. Update .NET version guidance and CI: `AGENTS.md`, `.github/instructions/api.instructions.md`, `.github/workflows/ci-api.yml`, `.github/workflows/copilot-setup-steps.yml`, and `.github/workflows/ci-ui.yml`. Name each area's terminal build/test job `gh-build-and-test-success`; verify with `scripts/verify.sh --all`.
 
@@ -72,6 +72,7 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 
 | Round | Gate | Findings | Resolution (commit / reason) |
 |---|---|---|---|
+| Implementation | UI acceptance test | RTK Query starts the fetch asynchronously after render; test initially resolved before the mocked request handler was installed. | Wait for request initiation while asserting loading remains visible; acceptance behavior unchanged. |
 
 ## Open issues
 

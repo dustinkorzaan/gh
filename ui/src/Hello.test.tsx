@@ -49,6 +49,9 @@ describe('hello shell', () => {
     renderApp();
 
     expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
+    await waitFor(() =>
+      expect(finishRequest).toBeTypeOf('function'),
+    );
     finishRequest(
       new Response(JSON.stringify({ message: 'Hello, world!' }), {
         headers: { 'Content-Type': 'application/json' },
