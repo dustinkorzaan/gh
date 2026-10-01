@@ -8,7 +8,7 @@ in this repo.
 | Area | Path | Stack |
 | --- | --- | --- |
 | UI | `/ui` | Vite + React + Redux Toolkit |
-| API | `/api` | C# / .NET 8 |
+| API | `/api` | C# / .NET 10 |
 | Infra | Bicep / ACA manifests | Azure Container Apps, Entra ID, Azure SQL DB |
 | Files | — | Blob access only via SAS URIs issued by the API's managed identity (file bytes never transit the API) |
 

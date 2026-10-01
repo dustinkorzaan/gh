@@ -127,7 +127,21 @@ api_test() {
 }
 
 e2e_run() {
-  (cd ui && npx playwright install --with-deps >/dev/null 2>&1 || npx playwright install)
+  # Chromium is the only browser playwright.config.ts uses. Install it only if
+  # the exact builds this Playwright version needs are missing, so later verify
+  # rounds skip the slow download and apt step.
+  local dirs dir installed=false
+  dirs="$(cd ui && npx playwright install --dry-run chromium 2>/dev/null |
+    awk '/Install location:/ {print $3}')"
+  if [ -n "$dirs" ]; then
+    installed=true
+    while read -r dir; do [ -d "$dir" ] || installed=false; done <<<"$dirs"
+  fi
+  if $installed; then
+    echo "Playwright Chromium already installed; skipping install."
+  else
+    (cd ui && npx playwright install --with-deps chromium >/dev/null 2>&1 || npx playwright install chromium)
+  fi
   (cd ui && npx playwright test)
 }
 

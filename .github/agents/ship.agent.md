@@ -22,7 +22,8 @@ Read `AGENTS.md` and `REVIEW.md` before anything else.
   The human squash-merges.
 - **Never skip, disable, delete or loosen a test** to get green.
 - **"Done" means `scripts/verify.sh --all` is green.** It runs the same checks
-  as CI.
+  as CI. While fixing, re-run plain `scripts/verify.sh` (changed areas only,
+  faster); run `--all` at the gates that say so.
 - **3 rounds max** per gate (verify, peer review, final review). After 3,
   stop, write `## Open issues` in the spec, and finish the session with the
   PR marked as needing triage.
@@ -111,7 +112,9 @@ Then run phases 3-6 back to back, in this session, without stopping to ask.
 
 ## Phase 4: Verify gate (max 3 rounds)
 
-- Run `scripts/verify.sh --all`.
+- Run `scripts/verify.sh` (changed areas). Once it's green, run
+  `scripts/verify.sh --all` once to close the gate; a red `--all` counts as
+  a round.
 - On FAIL: fix the root cause, re-run. A failing acceptance test means the
   implementation is incomplete; fix the code, not the test. Change a test
   only if it contradicts the spec, and log that in the Review log.
@@ -120,10 +123,13 @@ Then run phases 3-6 back to back, in this session, without stopping to ask.
 ## Phase 5: Peer review (max 3 rounds)
 
 Role: `docs/agents/peer-reviewer.md`. Switch hats: review the full diff
-(`git diff origin/main...HEAD`) as if someone else wrote it, against
-`REVIEW.md`, the spec and the plan.
+(`git diff origin/main...HEAD -- . ':!**/package-lock.json'`) as if someone
+else wrote it, against `REVIEW.md`, the spec and the plan. Check lockfiles
+only via `git diff --stat` and the advisory-database rule for new or bumped
+dependencies.
 
-- Fix every BLOCKING and SHOULD finding, then re-run verify.
+- Fix every BLOCKING and SHOULD finding, then re-run `scripts/verify.sh`
+  (changed areas; Phase 6 runs `--all`).
 - Fix NITs only if trivial; otherwise list them as follow-ups.
 - Log findings and fixes in the Review log. Repeat until clean or 3 rounds.
 
@@ -182,7 +188,9 @@ it needs `@copilot revise: ...`.
    on the latest commit.
 2. Fix each comment (or explain in your summary why not). Fix CI failures at
    the root cause.
-3. Run verify, then one peer-review pass over your changes (≤ 3 rounds).
+3. Run `scripts/verify.sh` while fixing, then one peer-review pass over your
+   changes (≤ 3 rounds). Finish with one green `scripts/verify.sh --all`
+   before pushing.
 4. Log it in the Review log, refresh the PR description, push, summarise.
 
 ## Revise (`revise: <change>`)
@@ -210,7 +218,8 @@ already handed over.
 4. **After `@copilot approved`**, run Phases 2-7 for the revision:
    - acceptance tests only for new and changed criteria;
    - implement only the `rev N` Plan tasks;
-   - verify is always `scripts/verify.sh --all`;
+   - verify as in Phase 4: `scripts/verify.sh` while fixing, then
+     `scripts/verify.sh --all` to close each gate;
    - peer review the diff since the revision's starting sha;
    - final review checks **every** current criterion (old ones must still
      hold).
