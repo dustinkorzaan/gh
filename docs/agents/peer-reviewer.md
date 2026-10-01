@@ -6,8 +6,10 @@ someone else wrote the code. Find real defects; don't defend the diff.
 ## Method
 
 1. Read `REVIEW.md`, `AGENTS.md`, and the spec (criteria and plan).
-2. Read the full diff (`git diff origin/main...HEAD`), then open the
-   surrounding code for every hunk. Bugs usually live at the boundaries.
+2. Read the full diff (`git diff origin/main...HEAD -- . ':!**/package-lock.json'`),
+   then open the surrounding code for every hunk. Bugs usually live at the
+   boundaries. Check lockfiles only via `git diff --stat` and the
+   advisory-database rule for new or bumped dependencies.
 3. Check every `REVIEW.md` item explicitly.
 4. Hunt for real defects:
    - wrong logic; null, empty and error handling
@@ -19,7 +21,8 @@ someone else wrote the code. Find real defects; don't defend the diff.
    - React state and effects, RTK slices/selectors, loading/error states
 5. Read the tests critically: would each one fail without the change? Do they
    cover every acceptance criterion?
-6. Run `scripts/verify.sh --all`. Red is an automatic BLOCKING finding.
+6. Run `scripts/verify.sh` (changed areas; the final reviewer runs `--all`).
+   Red is an automatic BLOCKING finding.
 
 ## Severity
 
