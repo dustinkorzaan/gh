@@ -7,7 +7,7 @@
 ## Progress
 
 - [x] Spec and plan written
-- [ ] Approved (by @<user>, <date>, tweaks: <none>)
+- [x] Approved (by @dustinkorzaan, 2026-10-01, tweaks: none)
 - [ ] Acceptance tests written
 - [ ] Implementation (all Plan tasks ticked)
 - [ ] Verify gate green
