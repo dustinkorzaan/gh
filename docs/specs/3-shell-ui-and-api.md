@@ -77,8 +77,8 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 | 1 | Peer review | BLOCKING: 460 generated files under API `bin/` and `obj/` were tracked. | Removed generated outputs from the index; `.gitignore` excludes them. |
 | 1 (post-fix) | Verify | `scripts/verify.sh --all` passed after generated artifacts were removed. | Clean. |
 | 2 | Peer review | No significant issues found; artifact cleanup confirmed. | Clean. |
-| 1 | Final review | SHIP — AC1: `HelloEndpointTests` asserts the endpoint status and JSON; AC2: `Hello.test.tsx` asserts loading, success, and error with `Hello.tsx`/`helloApi.ts` implementation; AC3: `hello.spec.ts` observes the live API response and greeting; AC4: CI jobs are named `gh-build-and-test-success` and run the area checks. Final `scripts/verify.sh --all` passed; generated outputs are not tracked. | Ready for human review. |
+| 1 | Final review | SHIP — AC1: `HelloEndpointTests` asserts the endpoint status and JSON; AC2: `Hello.test.tsx` asserts loading, success, and error with `Hello.tsx`/`helloApi.ts` implementation; AC3: `hello.spec.ts` observes the live API response and greeting; AC4: CI jobs are named `gh-build-and-test-success` and run the area checks. Final `scripts/verify.sh --all` passed; generated outputs are not tracked. | Code is ready; handover awaits PR description update. |
 
 ## Open issues
 
-None.
+The implementation passed final review, but the PR description still needs the handover update. `gh pr edit` could not authenticate because this session has no authenticated GitHub CLI host; the PR description could not be changed here.
