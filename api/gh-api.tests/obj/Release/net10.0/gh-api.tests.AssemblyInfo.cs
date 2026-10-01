@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("gh-api.tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+914a9d06c2ee4544d324342deb3323992cc9dfee")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+08768300933ec216b5533fd5cc3bfb833792a4b4")]
 [assembly: System.Reflection.AssemblyProductAttribute("gh-api.tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("gh-api.tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

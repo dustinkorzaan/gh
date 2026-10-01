@@ -2,7 +2,7 @@
 applyTo: "api/**"
 ---
 
-# API (`/api`): C# / .NET 8
+# API (`/api`): C# / .NET 10
 
 - Validate Entra ID tokens on every protected endpoint (scopes/roles via
   policies), never in a client.
