@@ -18,6 +18,9 @@ session resumes from the first unticked item.
 - [ ] Final review: SHIP
 - [ ] PR description updated, ready for human review
 
+`@copilot revise: ...` unticks everything from Approved down; see
+`## Revisions`.
+
 ## Problem
 
 <What is wrong or missing, for whom, and why now. 2-5 sentences.>
@@ -56,6 +59,11 @@ Contracts that apply (see `REVIEW.md`): <API contract ↔ RTK, SAS-only blobs, E
 ### Acceptance test files
 
 - <path>
+
+## Revisions
+
+| Rev | Request (verbatim) | Starting sha | Approved |
+|---|---|---|---|
 
 ## Review log
 

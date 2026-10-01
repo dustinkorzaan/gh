@@ -19,7 +19,8 @@ do (assigning the issue or an `@copilot` comment).
 | **Approve** | PR comment | `@copilot approved` or `@copilot approved, but <tweak>`. The rest of the loop runs in this session |
 | **Continue** (session stopped, e.g. around an hour) | PR comment | `@copilot continue` |
 | **Sync** (after another PR merged into `main`) | PR comment | `@copilot sync`, or `@copilot sync --light` to skip the overlap scan and re-review on a clean merge |
-| **Rework** (after your review, or CI red) | Review comments, then a PR comment | `@copilot rework` |
+| **Rework** (fixes within the approved scope, or CI red) | Review comments, then a PR comment | `@copilot rework` |
+| **Revise** (change what the story does, same PR) | PR comment | `@copilot revise: <new or changed behaviour>`. Updates the spec's acceptance criteria, waits for `@copilot approved`, then reruns the loop for the changes |
 | **Merge** | PR | **Squash and merge** (only you; agents never merge) |
 
 ```
@@ -30,6 +31,7 @@ Assign issue → Copilot, agent "ship"   start: plan / interview
 @copilot sync                          bring in main after other merges
 @copilot sync --light                  same, skips overlap scan/re-review
 @copilot rework                        fix your review comments / red CI
+@copilot revise: …                     change the story; then approve again
 Squash and merge                       you, after final review
 ```
 
@@ -57,11 +59,13 @@ next one after each merge.
 
 ## One-time repo settings
 
-1. **Settings → Copilot → Coding agent:** enable it for this repo.
-2. **Settings → Actions → General:** let workflows run on Copilot's PRs
+1. **Settings → General → Features:** tick **Issues**. Stories start as
+   issues, so the *User Story* form and "assign to Copilot" need it.
+2. **Settings → Copilot → Coding agent:** enable it for this repo.
+3. **Settings → Actions → General:** let workflows run on Copilot's PRs
    without manual approval (otherwise CI waits for an "Approve and run"
    click every push).
-3. **Settings → General → Pull Requests:** allow squash merging (optionally
+4. **Settings → General → Pull Requests:** allow squash merging (optionally
    disable merge commits and rebase merging).
-4. Optional: a ruleset that requests Copilot code review automatically, as a
+5. Optional: a ruleset that requests Copilot code review automatically, as a
    second opinion for your final review.

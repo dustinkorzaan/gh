@@ -14,7 +14,8 @@ A PR whose branch adds a spec under `docs/specs/` (not `_template.md`) is a
    `git diff --name-only --diff-filter=A origin/main...HEAD -- docs/specs/`.
 2. Read its `## Progress` checklist and Review log.
 3. Treat the comment that started this session as a ship command:
-   `answers: ...`, `approved`, `continue`, `sync`, `sync --light`, `rework`.
+   `answers: ...`, `approved`, `continue`, `sync`, `sync --light`, `rework`,
+   `revise: ...`.
    Anything else is a request within the current phase.
 4. Follow the matching section of `.github/agents/ship.agent.md`.
 

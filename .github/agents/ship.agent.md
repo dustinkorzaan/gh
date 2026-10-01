@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Delivers one user story end to end in a single session - plan and interview, wait for human approval, then acceptance tests, implementation, verify, peer review and final review (max 3 rounds each) until the PR is ready for human review. Also handles the continue, sync and rework commands on an existing story PR.
+description: Delivers one user story end to end in a single session - plan and interview, wait for human approval, then acceptance tests, implementation, verify, peer review and final review (max 3 rounds each) until the PR is ready for human review. Also handles the continue, sync, rework and revise commands on an existing story PR.
 ---
 
 # ship: single-session story delivery
@@ -14,8 +14,9 @@ Read `AGENTS.md` and `REVIEW.md` before anything else.
 
 ## Hard rules
 
-- **No code before approval.** Until the spec's Progress shows `Approved`,
-  the only file you may create or change is the spec. `--hands-off` is the
+- **No code before approval.** Until the spec's Progress shows `Approved`
+  (for a revision: approved for that revision), the only file you may create
+  or change is the spec. `--hands-off` is the
   one exception (see Flags).
 - **Never merge** a PR, never rebase, never force-push, never rewrite history.
   The human squash-merges.
@@ -42,6 +43,7 @@ that mentions you. Work out which command you were given:
 | PR comment `@copilot continue` | **continue** | Resume |
 | PR comment `@copilot sync` / `@copilot sync --light` | **sync** | Sync |
 | PR comment `@copilot rework` | **rework** | Rework |
+| PR comment `@copilot revise: <change>` | **revise** | Revise |
 
 Anything else in a PR comment on a story PR: treat it as a request inside the
 current phase, but still obey the hard rules (an ordinary comment is never an
@@ -171,7 +173,10 @@ Role: `docs/agents/sync.md`. In short:
 
 ## Rework (`rework`)
 
-The human reviewed and wants changes, or CI is red.
+The human reviewed and wants changes **within the approved scope**, or CI is
+red. If a comment asks for new or different behaviour (new or changed
+acceptance criteria), don't build it under rework: say in your summary that
+it needs `@copilot revise: ...`.
 
 1. Read every unresolved review comment on the PR and the failing check logs
    on the latest commit.
@@ -179,3 +184,36 @@ The human reviewed and wants changes, or CI is red.
    the root cause.
 3. Run verify, then one peer-review pass over your changes (≤ 3 rounds).
 4. Log it in the Review log, refresh the PR description, push, summarise.
+
+## Revise (`revise: <change>`)
+
+The human wants the story itself to change on this same PR: new behaviour,
+changed behaviour, or something dropped. Works whether or not the PR was
+already handed over.
+
+1. **Record the revision.** Number it (`rev 1`, `rev 2`, ...) and note the
+   current commit sha as its starting point. In the spec:
+   - add a row to `## Revisions`: number, the human's request verbatim, the
+     starting sha;
+   - add new acceptance criteria as the next numbers, tagged `(rev N)`;
+   - edit changed criteria in place, tagged `(changed in rev N)`;
+   - strike through dropped criteria (`~~AC3~~`) with the reason, and plan
+     the removal of their code and tests;
+   - add the new Plan tasks (unticked) under a `rev N` heading, with their
+     acceptance-test files.
+2. **Reset Progress.** Set Status back to `draft` and untick every item from
+   `Approved` down. Leave the earlier history in the Review log.
+3. **Ask for approval**, exactly as in Phase 1 step 3: questions if the
+   request is ambiguous, otherwise `## Revision N ready for approval` in the
+   PR description with what changes. End the session. If the spec's Mode is
+   `hands-off`, record assumptions and continue instead.
+4. **After `@copilot approved`**, run Phases 2-7 for the revision:
+   - acceptance tests only for new and changed criteria;
+   - implement only the `rev N` Plan tasks;
+   - verify is always `scripts/verify.sh --all`;
+   - peer review the diff since the revision's starting sha;
+   - final review checks **every** current criterion (old ones must still
+     hold).
+
+   Each gate gets a fresh 3 rounds for the revision. Log everything in the
+   Review log with the `rev N` prefix.
