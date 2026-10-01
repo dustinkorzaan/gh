@@ -1,18 +1,18 @@
 # Shell UI and Shell API
 
-- **Status:** in-progress
+- **Status:** draft
 - **Issue / PR:** #3 / current PR
 - **Mode:** interactive
 
 ## Progress
 
 - [x] Spec and plan written
-- [x] Approved (by @dustinkorzaan, 2026-10-01, tweaks: none)
-- [x] Acceptance tests written
-- [x] Implementation (all Plan tasks ticked)
-- [x] Verify gate green
-- [x] Peer review clean
-- [x] Final review: SHIP
+- [ ] Approved (for rev 1, by @<user>, <date>, tweaks: <none>)
+- [ ] Acceptance tests written (rev 1)
+- [ ] Implementation (rev 1 Plan tasks)
+- [ ] Verify gate green (rev 1)
+- [ ] Peer review clean (rev 1)
+- [ ] Final review: SHIP (rev 1)
 - [ ] PR description updated, ready for human review
 
 ## Problem
@@ -36,6 +36,8 @@ The repository has CI scaffolding but no application yet. The first shell needs 
 2. **AC2:** Given the UI is running, when the API returns the greeting, then the UI renders `Hello, world!`; while waiting it renders a loading state, and when the request fails it renders an error state.
 3. **AC3:** Given the UI and API are started together, when the Playwright shell test loads the UI, then it observes the greeting returned by the running API.
 4. **AC4:** Given a pull request changes the UI or API, when the applicable build-and-test workflow completes, then its terminal job is named `gh-build-and-test-success` and the job succeeds only when that area's build and tests pass.
+5. **AC5 (rev 1):** Given the repository workflows are inspected, then `.github/workflows/codeql.yml` is absent and the README no longer lists it as a workflow.
+6. **AC6 (rev 1):** Given the API test project is inspected, then the empty generated `UnitTest1.cs` is absent and the actual hello-endpoint tests remain runnable.
 
 ## Affected areas
 
@@ -49,6 +51,7 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 - The named terminal job is added to each existing area-specific CI workflow, keeping their current path filters and allowing each applicable check to be selected as required in GitHub.
 - The vague issue criteria are split into testable API, UI, cross-stack, and CI criteria above. The existing Playwright workflow and `scripts/verify.sh` require a runnable Playwright config once `/ui` exists.
 - The issue marks infra as affected, but a hello-world shell does not need infrastructure, authentication, persistence, or blob changes.
+- The rev 1 request calls `.github/workflows/codeql.yml` a duplicate, but it is a distinct CodeQL static-analysis workflow; the API/UI workflows only build and test. Removing it disables this repository's PR/push and scheduled CodeQL analysis, so rev 1 requires explicit approval with that effect made clear.
 
 ## Plan
 
@@ -56,6 +59,9 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 - [x] 2. Add the Vite/React/Redux Toolkit UI and its acceptance test: `ui/` and `ui/src/`. Fetch the API response and render loading, success, and error states; verify with `scripts/verify.sh ui`.
 - [x] 3. Add the Playwright config and cross-stack acceptance test: `ui/playwright.config.ts` and `ui/e2e/`. Start the API and UI for the test and verify that the UI renders the live API greeting with `scripts/verify.sh ui`.
 - [x] 4. Update .NET version guidance and CI: `AGENTS.md`, `.github/instructions/api.instructions.md`, `.github/workflows/ci-api.yml`, `.github/workflows/copilot-setup-steps.yml`, and `.github/workflows/ci-ui.yml`. Name each area's terminal build/test job `gh-build-and-test-success`; verify with `scripts/verify.sh --all`.
+- [ ] **rev 1**
+  - [ ] 1. Remove `.github/workflows/codeql.yml` and its README workflow-list entry; verify no CodeQL workflow remains and run `scripts/verify.sh --all`.
+  - [ ] 2. Delete the empty generated `api/gh-api.tests/UnitTest1.cs`; confirm the meaningful `HelloEndpointTests.cs` remains and run `scripts/verify.sh api`.
 
 ### Acceptance test files
 
@@ -67,6 +73,7 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 
 | Rev | Request (verbatim) | Starting sha | Approved |
 |---|---|---|---|
+| 1 | "delete .github/workflows/codeql.yml (duplicate)"; "delete api/gh-api.tests/UnitTest1.cs" | f1aeace | |
 
 ## Review log
 
