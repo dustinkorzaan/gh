@@ -8,7 +8,7 @@
 
 - [x] Spec and plan written
 - [x] Approved (by @dustinkorzaan, 2026-10-01, tweaks: none)
-- [ ] Acceptance tests written
+- [x] Acceptance tests written
 - [ ] Implementation (all Plan tasks ticked)
 - [ ] Verify gate green
 - [ ] Peer review clean
