@@ -11,7 +11,7 @@
 - [x] Acceptance tests written
 - [x] Implementation (all Plan tasks ticked)
 - [x] Verify gate green
-- [ ] Peer review clean
+- [x] Peer review clean
 - [ ] Final review: SHIP
 - [ ] PR description updated, ready for human review
 
@@ -74,6 +74,9 @@ Contracts that apply (see `REVIEW.md`): API contract ↔ RTK; auth, data, and bl
 |---|---|---|---|
 | Implementation | UI acceptance test | RTK Query starts the fetch asynchronously after render; test initially resolved before the mocked request handler was installed. | Wait for request initiation while asserting loading remains visible; acceptance behavior unchanged. |
 | 1 | Verify | `scripts/verify.sh --all` passed all UI, API, Playwright, and shell checks. | Clean on first round. |
+| 1 | Peer review | BLOCKING: 460 generated files under API `bin/` and `obj/` were tracked. | Removed generated outputs from the index; `.gitignore` excludes them. |
+| 1 (post-fix) | Verify | `scripts/verify.sh --all` passed after generated artifacts were removed. | Clean. |
+| 2 | Peer review | No significant issues found; artifact cleanup confirmed. | Clean. |
 
 ## Open issues
 
